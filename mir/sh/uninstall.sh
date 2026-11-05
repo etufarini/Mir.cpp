@@ -25,7 +25,7 @@ main() {
     # Check both the ownership marker and original target before removing a command.
     [[ "$COMMAND" == /*/mir && -f "$COMMAND" && ! -L "$COMMAND" ]] ||
         fail 'The installed command is missing or has been replaced.'
-    printf -v EXPECTED_EXEC 'exec %q "$@"' "$INSTALL_DIR/current/mir.sh"
+    printf -v EXPECTED_EXEC 'exec %q %q "$@"' "$BASH" "$INSTALL_DIR/current/mir.sh"
     {
         IFS= read -r _
         IFS= read -r marker

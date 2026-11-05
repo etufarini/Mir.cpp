@@ -1,17 +1,9 @@
 #!/usr/bin/env bash
 # Launch arguments and lifecycle. Trap state stays global until process exit.
 
-# Coreutils timeout is optional: skip probes rather than risk a stuck driver.
-bounded_command() {
-    local seconds=$1
-    shift
-    command -v timeout >/dev/null || return 1
-    timeout --kill-after=1 "$seconds" "$@" 2>/dev/null
-}
-
 server_capabilities() {
     [[ "${CAPABILITIES_SERVER:-}" != "$SERVER" ]] || return 0
-    SERVER_HELP=$(bounded_command 5 "$SERVER" --help) || SERVER_HELP=''
+    SERVER_HELP=$(platform_timeout 15 "$SERVER" --help) || SERVER_HELP=''
     CAPABILITIES_SERVER=$SERVER
 }
 
@@ -23,7 +15,7 @@ supports_option() {
 server_devices() {
     local line
     DEVICE_NAMES=(); DEVICE_DESCRIPTIONS=()
-    DEVICE_OUTPUT=$(bounded_command 2 "$SERVER" --list-devices) || return 1
+    DEVICE_OUTPUT=$(platform_timeout 15 "$SERVER" --list-devices) || return 1
     while IFS= read -r line; do
         if [[ "$line" =~ ^[[:space:]]+([^[:space:]:]+):[[:space:]]+(.+)$ ]]; then
             DEVICE_NAMES+=("${BASH_REMATCH[1]}")
@@ -185,7 +177,7 @@ run_server() {
     trap 'exit 130' INT
     trap 'exit 143' TERM
     if "$TUI"; then
-        LOG_FILE=$(mktemp -t mir.cpp.XXXXXXXX.log)
+        LOG_FILE=$(mktemp "${TMPDIR:-/tmp}/mir.cpp.XXXXXXXX")
         "$SERVER" "${ARGS[@]}" >"$LOG_FILE" 2>&1 &
     else
         printf 'Model: %s\nReasoning: %s\nContext: %s\nWeb UI: %s\n' "$MODEL" "$REASONING" "$(context_label)" "$URL"
@@ -197,7 +189,9 @@ run_server() {
     OPENED=false
     while kill -0 "$SERVER_PID" 2>/dev/null; do
         if ! "$OPENED" && curl "${CURL_ARGS[@]}" --silent --fail --max-time 2 "$HEALTH_URL/health" >/dev/null; then
-            if [[ -z "$UNIX_SOCKET" ]]; then xdg-open "$URL" >/dev/null 2>&1 || true; fi
+            if [[ -z "$UNIX_SOCKET" ]]; then
+                platform_open_url "$URL" >/dev/null 2>&1 || true
+            fi
             OPENED=true
         fi
         if "$TUI"; then

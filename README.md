@@ -4,9 +4,9 @@
 
 # Mir.cpp
 
-Run local GGUF models with llama.cpp through a simple Linux terminal menu.
+Run local GGUF models with llama.cpp through a simple terminal menu on Linux and macOS.
 Choose a model, adjust its settings, save configurations and chat in your browser.
-This release targets Linux with CPU, Vulkan and CUDA builds of llama.cpp.
+Supports Linux with CPU, Vulkan and CUDA builds, and macOS with CPU and Metal.
 CUDA still needs validation on NVIDIA hardware.
 Named after the Mir space station.
 
@@ -16,13 +16,14 @@ Named after the Mir space station.
 
 ## Requirements
 
-- Linux with Bash 4.4 or newer. The commands below are for Ubuntu/Debian.
+- Linux or macOS. Bash 4.4 or newer is required; macOS finds Homebrew Bash automatically.
 - A working [llama.cpp build](https://github.com/ggml-org/llama.cpp/blob/master/docs/build.md)
-  containing `build/bin/llama-server`. Follow that guide for CPU or GPU setup.
+  containing `build/bin/llama-server` or `bin/llama-server` (Homebrew layout).
+  Follow that guide for CPU or GPU setup.
 - At least one GGUF model supported by your llama.cpp version, with enough
   memory for the model and selected context on your chosen CPU or GPU.
 
-Install the launcher dependencies:
+Install the launcher dependencies on Ubuntu/Debian:
 
 ```bash
 sudo apt update
@@ -30,7 +31,16 @@ sudo apt install bash coreutils findutils grep util-linux curl ca-certificates \
     tar gzip dialog iproute2 procps xdg-utils
 ```
 
-`xdg-utils` opens the browser automatically; you can also open the address manually.
+On macOS, with [Homebrew](https://brew.sh/) installed:
+
+```bash
+brew install bash coreutils findutils dialog flock
+```
+
+Mir.cpp finds Homebrew Bash and tools automatically, even with the macOS system Bash.
+No shell or PATH configuration is needed for these dependencies.
+Linux uses `xdg-utils` to open the browser; macOS uses `open`.
+You can also open the address manually.
 The installer does not build llama.cpp, install GPU drivers or download models.
 
 ## Quick install

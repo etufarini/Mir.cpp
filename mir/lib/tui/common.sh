@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
 # Dialog wrapper and presentation helpers; DIALOGRC affects only this launcher.
 
-ui() {
+ui() (
+    # Let curses read the real terminal size and use our own positioning options.
+    # Scope this to the dialog child so the caller's environment stays intact.
+    unset LINES COLUMNS DIALOGOPTS
     DIALOGRC="${THEME_FILE:-${DIALOGRC:-/dev/null}}" dialog --stdout --no-tags \
         --no-collapse --backtitle 'MIR.CPP / STATION CONTROL' \
         --title " ${UI_TITLE:-Information} " "$@"
-}
+)
 
 menu() { ui --ok-label Select --cancel-label Back "$@"; }
 

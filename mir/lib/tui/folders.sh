@@ -39,7 +39,7 @@ select_folder() {
 }
 
 paths_menu() {
-    local action=llama choice initial previous UI_TITLE=Folders
+    local action=llama choice initial previous candidate UI_TITLE=Folders
     while true; do
         action=$(menu --default-item "$action" --menu "llama.cpp     $(compact_text "${LLAMA_CPP_PATH:-Not configured}")\nModels        $(compact_text "${MODELS_DIR:-Not configured}")\n\nChoose a folder. Valid changes are saved automatically." 17 80 3 \
             llama 'llama.cpp folder' models 'Models folder' back Back) || return 0
@@ -47,8 +47,9 @@ paths_menu() {
         if [[ "$action" == llama ]]; then initial="$LLAMA_CPP_PATH"; else initial="$MODELS_DIR"; fi
         choice=$(select_folder "$initial") || continue
         if [[ "$action" == llama ]]; then
-            if [[ ! -f "$choice/build/bin/llama-server" || ! -x "$choice/build/bin/llama-server" ]]; then
-                message 'This folder must contain the executable build/bin/llama-server. Select the llama.cpp folder after building it.'; continue
+            candidate=$(server_path "$choice")
+            if [[ ! -f "$candidate" || ! -x "$candidate" ]]; then
+                message 'This folder must contain executable build/bin/llama-server or bin/llama-server. Select the llama.cpp folder after building it.'; continue
             fi
             previous="$LLAMA_CPP_PATH"; LLAMA_CPP_PATH="$choice"
         else
@@ -58,7 +59,7 @@ paths_menu() {
             if [[ "$action" == llama ]]; then LLAMA_CPP_PATH="$previous"; else MODELS_DIR="$previous"; fi
             message 'Cannot save paths. The previous folder was kept.'; continue
         fi
-        SERVER="${LLAMA_CPP_PATH:+$LLAMA_CPP_PATH/build/bin/llama-server}"
+        SERVER=$(server_path "$LLAMA_CPP_PATH")
         if [[ "$action" == models ]]; then
             scan_models
             if (( ${#MODELS[@]} == 0 )); then message 'No GGUF models found. The folder was saved; add models or choose another folder.'; fi

@@ -1,25 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
-(( BASH_VERSINFO[0] > 4 || (BASH_VERSINFO[0] == 4 && BASH_VERSINFO[1] >= 4) )) || {
-    printf 'Mir.cpp requires Bash 4.4 or newer.\n' >&2
-    exit 1
-}
-
 # Run without arguments for the TUI, or pass a GGUF path for direct startup.
 MIR_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+source "$MIR_ROOT/lib/runtime.sh"
+configure_runtime
+if [[ "$RUNTIME_BASH" != "$BASH" ]]; then exec "$RUNTIME_BASH" "${BASH_SOURCE[0]}" "$@"; fi
+
 # Modules define functions only. Configuration and runtime state are shared in
 # this shell; only the entry point enables strict mode and starts the server.
-source "$MIR_ROOT/lib/config.sh"
-source "$MIR_ROOT/lib/paths.sh"
-source "$MIR_ROOT/lib/profiles.sh"
-source "$MIR_ROOT/lib/processes.sh"
-source "$MIR_ROOT/lib/server.sh"
-source "$MIR_ROOT/lib/memory.sh"
-source "$MIR_ROOT/lib/tui/common.sh"
-source "$MIR_ROOT/lib/tui/folders.sh"
-source "$MIR_ROOT/lib/tui/settings.sh"
-source "$MIR_ROOT/lib/tui/profiles.sh"
-source "$MIR_ROOT/lib/tui/main.sh"
+source "$MIR_ROOT/lib/platform.sh"
+load_platform "$PLATFORM_ID"
+source "$MIR_ROOT/lib/launcher.sh"
+load_launcher_modules
 
 initialize_config "$@"
 if (( $# > 0 )); then shift; fi

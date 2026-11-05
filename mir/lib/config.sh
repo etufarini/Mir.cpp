@@ -89,7 +89,7 @@ initialize_config() {
     if [[ -e "$PATHS_FILE" ]] && ! load_paths; then PATHS_WARNING='Saved paths could not be read. Set them again in Folders.'; fi
     read_launcher_control LLAMA_CPP_PATH LLAMA_CPP_DIR "${LLAMA_CPP_DIR:-$LLAMA_CPP_PATH}"
     read_launcher_control MODELS_DIR MODELS_DIR "${LLAMA_MODELS_DIR:-$MODELS_DIR}"
-    SERVER="${LLAMA_CPP_PATH:+$LLAMA_CPP_PATH/build/bin/llama-server}"
+    SERVER=$(server_path "$LLAMA_CPP_PATH")
     MODEL="${1:-}"
     read_launcher_control CTX_SIZE CTX_SIZE "${LLAMA_CTX_SIZE:-auto}"
     read_launcher_control REASONING REASONING "${LLAMA_REASONING:-auto}"
@@ -125,7 +125,7 @@ initialize_config() {
 }
 
 validate_config() {
-    local tool key
+    local key
     valid_port "$PORT" || fail 'Port must be an integer between 1 and 65535.'
     PORT=$((10#$PORT))
     valid_context "$CTX_SIZE" || fail 'MIR_CTX_SIZE must be auto or an integer from 0 to 2147483647 (0 requests the full model context).'
@@ -140,5 +140,5 @@ validate_config() {
     for key in "${GENERATION_KEYS[@]}"; do
         valid_generation_value "$key" "${GENERATION[$key]}" || fail "Invalid MIR_${key^^}. Use auto or a valid generation value."
     done
-    for tool in ss curl; do command -v "$tool" >/dev/null || fail "Required command not found: $tool"; done
+    check_dependencies runtime || exit 1
 }

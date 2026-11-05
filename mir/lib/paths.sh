@@ -1,6 +1,16 @@
 #!/usr/bin/env bash
 # Owns saved paths and model discovery; reads configuration files as data.
 
+# Source builds take precedence over package-manager layouts.
+server_path() {
+    local folder=$1 candidate
+    [[ -n "$folder" ]] || return 0
+    for candidate in "$folder/build/bin/llama-server" "$folder/bin/llama-server"; do
+        if [[ -f "$candidate" && -x "$candidate" ]]; then printf '%s' "$candidate"; return 0; fi
+    done
+    printf '%s/build/bin/llama-server' "$folder"
+}
+
 # Import legacy data once. Never source it, overwrite a new configuration, or
 # remove the original. Stage beside the destination for an atomic rename.
 migrate_config() {
@@ -16,7 +26,7 @@ migrate_config() {
     [[ -n "$legacy" ]] || return 0
     mkdir -p -- "${CONFIG_DIR%/*}" || return 1
     temporary=$(mktemp -d "${CONFIG_DIR%/*}/.mir-migration.XXXXXXXX") || return 1
-    if cp -a -- "$legacy/." "$temporary/" && mv -Tn -- "$temporary" "$CONFIG_DIR"; then
+    if cp -a -- "$legacy/." "$temporary/" && platform_move "$temporary" "$CONFIG_DIR" no-clobber; then
         # With no-clobber, a concurrently created destination leaves the stage.
         [[ ! -d "$temporary" ]] || rm -rf -- "$temporary"
         return 0
@@ -57,7 +67,7 @@ scan_models() {
     MODELS=(); MODEL_OPTIONS=()
     if [[ -d "$MODELS_DIR" && -r "$MODELS_DIR" && -x "$MODELS_DIR" ]]; then
         # Follow file symlinks, without descending through linked directories.
-        mapfile -d '' -t MODELS < <(find -H "$MODELS_DIR" \( -type f -o -xtype f \) -iname '*.gguf' ! -name '._*' -print0 | sort -z)
+        mapfile -d '' -t MODELS < <(platform_find_models "$MODELS_DIR" | sort -z)
     fi
     if (( ${#MODELS[@]} )) && [[ -r "$helper" ]] && command -v python3 >/dev/null; then
         mapfile -d '' -t roles < <(printf '%s\0' "${MODELS[@]}" | python3 "$helper")

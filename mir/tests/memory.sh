@@ -2,8 +2,9 @@
 # Native planner fixtures and memory-budget edge cases; no model allocation.
 set -euo pipefail
 TEST_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
-source "$TEST_ROOT/lib/server.sh"
-source "$TEST_ROOT/lib/memory.sh"
+MIR_ROOT=$TEST_ROOT
+source "$MIR_ROOT/tests/helpers/core.sh"
+load_test_core fake
 work=$(mktemp -d)
 trap 'rm -rf -- "$work"' EXIT
 mkdir -p "$work/build/bin"
@@ -15,7 +16,7 @@ export MEMORY_TEST_WORK="$work"
 cat > "$SERVER" <<'MOCK'
 #!/usr/bin/env bash
 case "$1" in
-    --help) echo 'number of server slots (default: 1)' ;;
+    --help) printf '%s\n' "${MEMORY_TEST_SERVER_HELP:-number of server slots (default: 1)}" ;;
     --list-devices)
         echo '  Accelerator0: Test device (16384 MiB, 10240 MiB free)'
         echo '  Accelerator1: Unknown budget (0 MiB, 0 MiB free)' ;;
@@ -24,7 +25,7 @@ esac
 MOCK
 cat > "$work/build/bin/llama-fit-params" <<'MOCK'
 #!/usr/bin/env bash
-if [[ "$1" == --help ]]; then echo '--fit-print'; exit 0; fi
+if [[ "$1" == --help ]]; then printf '%s\n' "${MEMORY_TEST_HELP:---fit-print --parallel}"; exit 0; fi
 printf '%s\0' "$@" >> "$MEMORY_TEST_WORK/args"
 if [[ "${*: -1}" == off ]]; then
     [[ ! -f "$MEMORY_TEST_WORK/fit-failed" ]] || exit 1
@@ -33,6 +34,7 @@ if [[ "${*: -1}" == off ]]; then
 else
     echo 'Accelerator0 7000 1000 192'
     echo 'Host 512 256 256'
+    if [[ -f "$MEMORY_TEST_WORK/duplicates" ]]; then echo 'Host 1 2 3'; fi
 fi
 MOCK
 chmod +x "$SERVER" "$work/build/bin/llama-fit-params"
@@ -80,6 +82,77 @@ DEVICE_FREE[Accelerator0]=8000
 [[ $(memory_line estimate) != *'Remaining: -'* ]]
 unset 'DEVICE_FREE[Accelerator0]'
 [[ $(memory_line estimate) == *'GPU N/A'* ]]
+
+# Duplicate pools must not be summed into a plausible allocation estimate.
+touch "$work/duplicates"
+memory_estimate
+[[ ${#MEMORY_NAMES[@]} == 0 ]]
+rm "$work/duplicates"
+memory_estimate
+[[ ${#MEMORY_NAMES[@]} == 2 ]]
+
+# A planner without unified KV support must not estimate an automatic server.
+export MEMORY_TEST_SERVER_HELP='number of server slots (default: -1, -1 = auto)'
+CAPABILITIES_SERVER='' MEMORY_KEY=''
+size=$(wc -c < "$work/args")
+refresh_memory
+[[ ${#MEMORY_NAMES[@]} == 0 ]]
+(( $(wc -c < "$work/args") == size ))
+memory_available
+[[ $(memory_line live) == *'Free GiB: RAM 16.0'* ]]
+# Native auto must follow the same path even when supplied through the environment.
+export LLAMA_ARG_N_PARALLEL=-1
+refresh_memory
+[[ ${#MEMORY_NAMES[@]} == 0 ]]
+# A helper capable of matching the layout receives explicit effective settings.
+export MEMORY_TEST_HELP='--fit-print --parallel --kv-unified --no-kv-unified'
+MEMORY_KEY=''
+refresh_memory
+[[ ${#MEMORY_NAMES[@]} == 2 ]]
+python3 - "$work/args" <<'PYARGS'
+import sys
+from pathlib import Path
+args = Path(sys.argv[1]).read_bytes().split(b'\0')
+assert [b'--parallel', b'4'] == args[args.index(b'--parallel'):args.index(b'--parallel')+2]
+assert b'--kv-unified' in args
+PYARGS
+# A compatible helper also receives an explicit disabled KV layout.
+export LLAMA_ARG_N_PARALLEL=2 LLAMA_ARG_KV_UNIFIED=off
+: > "$work/args"
+refresh_memory
+[[ ${#MEMORY_NAMES[@]} == 2 ]]
+python3 - "$work/args" <<'PYARGS'
+import sys
+from pathlib import Path
+args = Path(sys.argv[1]).read_bytes().split(b'\0')
+assert [b'--parallel', b'2'] == args[args.index(b'--parallel'):args.index(b'--parallel')+2]
+assert b'--no-kv-unified' in args and b'--kv-unified' not in args
+PYARGS
+# A positive slot override does not enable unified KV by default.
+export MEMORY_TEST_HELP='--fit-print --parallel' LLAMA_ARG_N_PARALLEL=2
+refresh_memory
+[[ ${#MEMORY_NAMES[@]} == 2 ]]
+export LLAMA_ARG_KV_UNIFIED=on
+refresh_memory
+[[ ${#MEMORY_NAMES[@]} == 0 ]]
+# Native negative aliases win even when explicitly empty; never change the env.
+export LLAMA_ARG_NO_KV_UNIFIED=''
+refresh_memory
+[[ ${#MEMORY_NAMES[@]} == 2 && $LLAMA_ARG_KV_UNIFIED == on && -v LLAMA_ARG_NO_KV_UNIFIED ]]
+# shellcheck disable=SC2016 # Deliberately literal input must never execute.
+for LLAMA_ARG_N_PARALLEL in '' 0 '$(touch "$MEMORY_TEST_WORK/unsafe")' 999999999999999999; do
+    refresh_memory
+    [[ ${#MEMORY_NAMES[@]} == 0 ]]
+done
+[[ ! -e "$work/unsafe" ]]
+unset LLAMA_ARG_N_PARALLEL LLAMA_ARG_KV_UNIFIED LLAMA_ARG_NO_KV_UNIFIED
+# Auto still forces unified KV even when its environment toggle says off.
+export LLAMA_ARG_KV_UNIFIED=off
+refresh_memory
+[[ ${#MEMORY_NAMES[@]} == 0 ]]
+unset LLAMA_ARG_KV_UNIFIED MEMORY_TEST_SERVER_HELP MEMORY_TEST_HELP
+CAPABILITIES_SERVER='' MEMORY_KEY=''
+printf 'PASS: planner/server layout compatibility, auto slots, native KV controls, cache invalidation and independent live telemetry\n'
 
 # The CPU override is shared by planning and launch without mutating profiles.
 DEVICE=none GPU_LAYERS=all

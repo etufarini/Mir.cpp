@@ -3,11 +3,7 @@
 
 check_port() {
     local pid
-    LISTENERS=$(ss -H -ltnp "sport = :$PORT") || fail 'Unable to inspect listening ports.'
-    PIDS=()
-    while IFS= read -r pid; do
-        [[ -z "$pid" ]] || PIDS+=("$pid")
-    done < <(printf '%s' "$LISTENERS" | grep -oE 'pid=[0-9]+' | cut -d= -f2 | sort -un)
+    platform_listeners "$PORT" || fail 'Unable to inspect listening ports.'
     PORT_STATUS="Port $PORT: FREE"
     if [[ -n "$LISTENERS" ]]; then
         PORT_STATUS="Port $PORT: IN USE"

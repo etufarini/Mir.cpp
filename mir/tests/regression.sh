@@ -16,14 +16,20 @@ import time
 root = Path(sys.argv[1])
 baseline = sys.argv[2]
 launchers = [root / 'mir.sh']
-assert all(os.access(path, os.X_OK) for path in launchers)
 if baseline:
     launchers.append(Path(baseline).resolve())
 
 with tempfile.TemporaryDirectory(prefix='mir-regression-') as temporary:
-    work = Path(temporary)
+    work = Path(temporary).resolve()
     bin_dir = work / 'bin'
     bin_dir.mkdir()
+    # Exercise the Linux branch even on macOS; native Darwin checks are separate.
+    (bin_dir / 'uname').write_text('#!/bin/sh\nprintf "Linux\\n"\n')
+    (bin_dir / 'uname').chmod(0o755)
+    for tool in ('mv', 'find'):
+        gnu = shutil.which('g' + tool)
+        if gnu:
+            (bin_dir / tool).symlink_to(gnu)
     models = work / 'models with spaces'
     models.mkdir()
     model = models / 'example.gguf'
@@ -158,7 +164,7 @@ sys.exit(status)
     print('PASS: generation presets, default omission, numeric validation, aliases and pass-through precedence')
 
     # Source functions without running initialization, launching or installing traps.
-    sources = '\n'.join('source "$1/' + p.relative_to(root).as_posix() + '"' for p in sorted((root / 'lib').rglob('*.sh'))) + '\n'
+    sources = 'MIR_ROOT=$1; source "$MIR_ROOT/tests/helpers/core.sh"; load_test_core fake\n'
     # Compare all persisted controls and paths, not just the generated argv.
     control_values = {'LLAMA_CPP_DIR': str(server_dir), 'MODELS_DIR': str(models),
                       'CTX_SIZE': '8192', 'REASONING': 'on', 'PORT': '10002',
@@ -204,7 +210,7 @@ initialize_config "$2"
 '''
     subprocess.run(['bash', '-euo', 'pipefail', '-c', sources + literal_checks, 'test', str(root), str(model)],
                    env=env, cwd=work, check=True)
-    print('PASS: all Mir/Sputnik/LLAMA control priorities, explicit empties, literal values and repeat initialization')
+    print('PASS: all current/previous/legacy control priorities, explicit empties, literal values and repeat initialization')
     checks = r'''
 initialize_config "$2"
 validate_config
@@ -283,7 +289,8 @@ done
 head -n 8 "$PROFILES_DIR/Generation.conf" > "$PROFILES_DIR/Legacy.conf"
 load_profile "$PROFILES_DIR/Legacy.conf"
 [[ $(generation_preset) == default && ${GENERATION[seed]} == auto && ${GENERATION[max_tokens]} == auto ]]
-[[ $(profile_status) == Legacy && $(wc -l < "$PROFILES_DIR/Legacy.conf") == 8 ]]
+[[ $(profile_status) == Legacy ]]
+(( $(wc -l < "$PROFILES_DIR/Legacy.conf") == 8 ))
 # Invalid or canceled edits preserve all saved values and tracking.
 message() { :; }
 ui() { printf 'bad'; }

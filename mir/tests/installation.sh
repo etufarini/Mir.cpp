@@ -2,8 +2,9 @@
 # Installer integration checks use local archives and an isolated HOME.
 set -euo pipefail
 TEST_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
-python3 - "$TEST_ROOT" <<'PY'
+python3 - "$TEST_ROOT" "${1:-Linux}" <<'PY'
 import io
+import shlex
 import os
 import pty
 from pathlib import Path
@@ -16,7 +17,11 @@ import tarfile
 import tempfile
 
 root = Path(sys.argv[1])
+target_os = sys.argv[2]
+assert target_os in ('Linux', 'Darwin')
 installer = (root / 'sh/install.sh').read_bytes()
+host_brew = shutil.which('brew')
+host_brew_data = Path(host_brew).read_bytes() if host_brew else None
 with tempfile.TemporaryDirectory(prefix='mir-install-') as temporary:
     work = Path(temporary)
     home = work / 'home with spaces'
@@ -45,6 +50,7 @@ with tempfile.TemporaryDirectory(prefix='mir-install-') as temporary:
                 info.mode = 0o644  # Installer must make the launcher executable.
                 tar.addfile(info, io.BytesIO(data))
     def executable(path, content):
+        assert not path.is_symlink(), f'Refusing to overwrite a symlink: {path}'
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content)
         path.chmod(0o755)
@@ -65,10 +71,17 @@ while (( $# )); do
 done
 exit 1
 ''')
+    executable(bin_dir / 'uname', '#!/bin/sh\nprintf "' + target_os + '\\n"\n')
+    real_move = shutil.which('gmv') or '/bin/mv'
     executable(bin_dir / 'mv', '''#!/usr/bin/env bash
 if [[ ${TEST_ACTIVATION:-ok} == fail && ${*: -1} == */current ]]; then exit 1; fi
-exec /bin/mv "$@"
-''')
+exec REAL_MOVE "$@"
+'''.replace('REAL_MOVE', shlex.quote(real_move)))
+    executable(bin_dir / 'gmv', (bin_dir / 'mv').read_text())
+    executable(bin_dir / 'netstat', '#!/bin/sh\nexit 0\n')
+    executable(bin_dir / 'lsof', '#!/bin/sh\nexit 1\n')
+    if not shutil.which('gfind'):
+        (bin_dir / 'gfind').symlink_to(shutil.which('find'))
     executable(bin_dir / 'rm', '''#!/usr/bin/env bash
 if [[ ${TEST_CLEANUP:-ok} == fail ]]; then
     for target in "$@"; do
@@ -120,8 +133,11 @@ exec /bin/rm "$@"
     target = (install_dir / 'current').resolve()
     assert b'https://codeload.github.com/etufarini/Mir.cpp/tar.gz/refs/heads/main' in (work / 'download-args').read_bytes().split(b'\0')
     assert command.is_file() and os.access(command, os.X_OK)
+    selected_adapters = {'lib/platform/linux.sh'} if target_os == 'Linux' else {'lib/platform/macos.sh', 'lib/platform/macos-bootstrap.sh'}
     for name in files:
-        if name != 'mir.sh':
+        if name.startswith('lib/platform/') and name not in selected_adapters:
+            assert not (target / name).exists()
+        elif name != 'mir.sh':
             assert (target / name).read_bytes() == source_path(name).read_bytes()
     assert (config / 'paths.conf').read_text() == 'existing paths\n'
     assert (config / 'profiles/Personal.conf').read_text() == 'existing profile\n'
@@ -156,7 +172,7 @@ printf '%s\\0' "$@" > "$TEST_ARGS"
         assert (install_dir / 'current').resolve() == updated
         assert command.read_bytes() == snapshot
         assert set((install_dir / 'releases').iterdir()) == releases
-    for omitted in ['lib/tui/main.sh', 'lib/memory.sh', 'lib/gguf.py', 'dialogrc', 'sh/uninstall.sh', *documents]:
+    for omitted in [*selected_adapters, 'lib/runtime.sh', 'lib/tui/main.sh', 'lib/memory.sh', 'lib/gguf.py', 'dialogrc', 'sh/uninstall.sh', *documents]:
         package(omit=omitted)
         install(success=False)
         assert (install_dir / 'current').resolve() == updated
@@ -237,7 +253,8 @@ printf '%s\\0' "$@" > "$TEST_ARGS"
     # Control PATH completely so missing-command checks do not depend on the host.
     restricted = work / 'restricted-bin'
     restricted.mkdir()
-    tools = 'bash curl tar gzip mktemp chmod mkdir mv ln rm flock dialog ss ps find sort grep cut dirname sleep cp'.split()
+    tools = 'uname brew bash curl tar gzip mktemp chmod mkdir mv ln rm flock dialog ps find sort grep cut dirname sleep cp'.split()
+    tools += ['gfind', 'gmv', 'lsof', 'netstat'] if target_os == 'Darwin' else ['ss']
     for tool in tools:
         source = bin_dir / tool
         if source.exists():
@@ -246,18 +263,22 @@ printf '%s\\0' "$@" > "$TEST_ARGS"
             (restricted / tool).symlink_to(shutil.which(tool))
         elif tool == 'dialog':
             executable(restricted / tool, '#!/bin/sh\nexit 0\n')
+    fake_prefix = work / 'isolated brew'
+    (fake_prefix / 'bin').mkdir(parents=True)
+    (restricted / 'brew').unlink(missing_ok=True)
+    executable(restricted / 'brew', "#!/bin/sh\nprintf '%s\\n' " + shlex.quote(str(fake_prefix)) + "\n")
     (restricted / 'gzip').unlink()
     (restricted / 'dialog').unlink()
     installed = (install_dir / 'current').resolve()
     result = install({'PATH':str(restricted)}, success=False)
     assert b'  - gzip' in result.stderr and b'  - dialog' in result.stderr
-    assert b'sudo apt install' in result.stderr and b'Installation complete' not in result.stdout
+    assert (b'brew install' if target_os == 'Darwin' else b'sudo apt install') in result.stderr and b'Installation complete' not in result.stdout
     assert (install_dir / 'current').resolve() == installed
     assert b'Downloading Mir.cpp' not in result.stdout
     (restricted / 'gzip').symlink_to(shutil.which('gzip'))
     executable(restricted / 'dialog', '#!/bin/sh\nexit 0\n')
     result = install({'PATH':str(restricted)})
-    assert b'WARNING: xdg-open is missing' in result.stderr
+    assert ('WARNING: ' + ('open' if target_os == 'Darwin' else 'xdg-open') + ' is missing').encode() in result.stderr
     assert b'Open the server address manually' in result.stderr
     print('PASS: aggregated required dependencies before changes and optional browser warning')
 
@@ -268,6 +289,11 @@ printf '%s\\0' "$@" > "$TEST_ARGS"
     install({'HOME':str(other_home), 'XDG_DATA_HOME':str(custom_data)})
     assert (custom_data / 'mir.cpp/current/lib/config.sh').is_file()
     assert (other_home / '.local/bin/mir').is_file()
+    other_adapter = 'lib/platform/macos.sh' if target_os == 'Linux' else 'lib/platform/linux.sh'
+    package(omit=other_adapter)
+    install({'HOME':str(other_home), 'XDG_DATA_HOME':str(custom_data)})
+    assert not (custom_data / 'mir.cpp/current' / other_adapter).exists()
+    print('PASS: only the selected adapter is required and installed')
     print('PASS: XDG data directory')
 
     def uninstall(arguments=(), overrides=None, success=True):
@@ -372,5 +398,6 @@ printf '%s\\0' "$@" > "$TEST_ARGS"
     assert all(path.read_bytes() == data for path, data in previous_files.items())
     assert os.readlink(previous / 'current') == 'releases/old'
     assert subprocess.check_output([str(previous_command)]) == b'previous command\n'
-    print('PASS: previous Sputnik command, installed program and saved settings are preserved')
+    assert not host_brew or Path(host_brew).read_bytes() == host_brew_data
+    print('PASS: previous launcher command, installed program, saved settings and host Homebrew are preserved')
 PY

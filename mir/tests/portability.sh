@@ -7,6 +7,7 @@ import json
 import os
 from pathlib import Path
 import pty
+import shutil
 import struct
 import subprocess
 import sys
@@ -18,6 +19,13 @@ with tempfile.TemporaryDirectory(prefix='mir-portability-') as temporary:
     work = Path(temporary)
     commands = work / 'bin'
     commands.mkdir()
+    # Exercise the Linux branch even on macOS; native Darwin checks are separate.
+    (commands / 'uname').write_text('#!/bin/sh\nprintf "Linux\\n"\n')
+    (commands / 'uname').chmod(0o755)
+    for tool in ('mv', 'find'):
+        gnu = shutil.which('g' + tool)
+        if gnu:
+            (commands / tool).symlink_to(gnu)
     models = work / 'models'
     models.mkdir()
     model = models / 'model.gguf'
@@ -78,7 +86,7 @@ sys.exit(status)
                TEST_ARGS=str(work / 'args'), TEST_PORTS=str(work / 'ports'),
                TEST_CURL=str(work / 'curl'), TEST_BROWSER=str(work / 'browser'),
                TEST_QUEUE=str(work / 'queue'))
-    sources = '\n'.join(f'source "$1/{p.relative_to(root)}"' for p in sorted((root / 'lib').rglob('*.sh'))) + '\n'
+    sources = 'MIR_ROOT=$1; source "$MIR_ROOT/tests/helpers/core.sh"; load_test_core fake\n'
 
     def check(code, overrides=None):
         result = subprocess.run(['bash', '-euo', 'pipefail', '-c', sources + code,
@@ -172,7 +180,7 @@ DEVICE=auto
 load_profile "$PROFILES_DIR/OtherComputer.conf"
 if prepare_server; then exit 1; fi
 [[ $DEVICE == Vulkan9 && $(profile_status) == OtherComputer && $LAUNCH_ERROR == *unavailable* ]]
-bounded_command() { return 1; }
+platform_timeout() { return 1; }
 message() { :; }
 ui() { printf none; }
 select_device
@@ -184,7 +192,7 @@ prepare_server
     # Prove the bound can actually terminate a stalled probe, independently of a GPU.
     executable(commands / 'stalled', '#!/usr/bin/env bash\nexec /bin/sleep 30\n')
     start = time.monotonic()
-    check('if bounded_command 0.1 stalled; then exit 1; fi')
+    check('if platform_timeout 0.1 stalled; then exit 1; fi')
     assert time.monotonic() - start < 3
     print('PASS: server capability checks, missing devices without mutation, CPU recovery and bounded probing')
 

@@ -1,0 +1,38 @@
+name: Launcher checks
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Shared and ${{ matrix.suite }} checks
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            suite: linux
+          - os: macos-15
+            suite: macos
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Install Linux check dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bash curl tar gzip dialog iproute2 procps util-linux python3 shellcheck
+      - name: Install macOS check dependencies
+        if: runner.os == 'macOS'
+        run: brew install bash coreutils findutils dialog flock shellcheck
+      - name: Shared checks
+        run: bash mir/tests/run.sh common
+      - name: Platform checks
+        run: bash mir/tests/run.sh "${{ matrix.suite }}"

@@ -33,7 +33,7 @@ server_menu() {
 configure_tui() {
     local ACTION CHOICE RESULT UI_TITLE='Main menu'
     [[ -t 0 && -t 1 ]] || fail 'The TUI needs a terminal. For direct startup, pass a GGUF path.'
-    command -v dialog >/dev/null || fail 'Install the TUI dependency: sudo apt install dialog'
+    check_dependencies tui || exit 1
     THEME_FILE="$MIR_ROOT/dialogrc"
     [[ -z "$PATHS_WARNING" ]] || message "$PATHS_WARNING"
     scan_models
