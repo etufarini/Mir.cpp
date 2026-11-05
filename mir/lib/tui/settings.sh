@@ -42,7 +42,7 @@ sampling_menu() {
             printf -v label '%-19s%s' "$(generation_label "$key")" "$(display_value "${GENERATION[$key]}" Default)"
             options+=("$key" "$label")
         done
-        action=$(ui --cancel-label Back --default-item "$action" --menu 'Adjust server defaults for generated text.\nModel recommendations take priority over generic presets.' 22 80 8 "${options[@]}" back Back) || return 0
+        action=$(menu --default-item "$action" --menu 'Adjust server defaults for generated text.\nModel recommendations take priority over generic presets.' 22 80 8 "${options[@]}" back Back) || return 0
         [[ "$action" != back ]] || return 0
         edit_generation_value "$action"
     done
@@ -51,14 +51,14 @@ sampling_menu() {
 generation_menu() {
     local action=preset choice UI_TITLE=Generation
     while true; do
-        action=$(ui --cancel-label Back --default-item "$action" --menu 'Presets change sampling only; seed and output limit stay separate.\nBrowser chat settings can override these server defaults.\nUse server defaults in the chat to follow this selection.' 20 80 5 \
+        action=$(menu --default-item "$action" --menu 'Presets change sampling only; seed and output limit stay separate.\nBrowser chat settings can override these server defaults.\nUse server defaults in the chat to follow this selection.' 20 80 5 \
             preset "Preset                 $(display_value "$(generation_preset)")" \
             sampling 'Sampling parameters    View or customize values' \
             seed "Seed                   $(display_value "${GENERATION[seed]}" Default)" \
             max_tokens "Maximum output tokens  $(display_value "${GENERATION[max_tokens]}" Default)" back Back) || return 0
         case "$action" in
             preset)
-                if choice=$(UI_TITLE='Generation preset' ui --cancel-label Back --default-item "$(generation_preset)" --menu 'Starting points to test, not guarantees of quality.\nNo preset changes context, reasoning or hardware settings.' 18 80 5 \
+                if choice=$(UI_TITLE='Generation preset' menu --default-item "$(generation_preset)" --menu 'Starting points to test, not guarantees of quality.\nNo preset changes context, reasoning or hardware settings.' 18 80 5 \
                     default 'Default       Keep native sampling defaults' \
                     focused 'Focused       Temp 0.6; Top-P 0.95; Top-K 20' \
                     exploratory 'Exploratory   Temp 1; Top-P 0.95; Top-K 20' \
@@ -81,7 +81,7 @@ select_device() {
     else
         message 'Could not list devices within the time limit, or probing is unavailable.\nCheck the llama.cpp folder and drivers. Auto and CPU only remain available.'
     fi
-    if choice=$(ui --cancel-label Back --default-item "$DEVICE" --menu 'Choose a device supported by your llama.cpp build' 18 80 10 "${options[@]}"); then
+    if choice=$(menu --default-item "$DEVICE" --menu 'Choose a device supported by your llama.cpp build' 18 80 10 "${options[@]}"); then
         DEVICE="$choice"
     fi
 }
@@ -91,7 +91,7 @@ performance_menu() {
     while true; do
         layers_label=$(display_value "$GPU_LAYERS")
         if [[ "$DEVICE" == none ]]; then layers_label='Ignored (CPU only)'; fi
-        action=$(ui --cancel-label Back --default-item "$action" --menu 'Auto and Default use llama.cpp defaults.\nFlash Attention stays automatic.' 18 80 5 \
+        action=$(menu --default-item "$action" --menu 'Auto and Default use llama.cpp defaults.\nFlash Attention stays automatic.' 18 80 5 \
             device "Device             $(compact_text "$(display_value "$DEVICE")" 53)" threads "CPU threads        $(display_value "$THREADS")" \
             layers "GPU layers         $layers_label" prompt "Prompt processing  $(display_value "$PROMPT_PROCESSING" Default)" back 'Back') || return 0
         case "$action" in
@@ -105,7 +105,7 @@ performance_menu() {
                     if valid_layers "$choice"; then GPU_LAYERS="$choice"; else message 'Enter auto, all or an integer from 0 to 2147483647.'; fi
                 fi ;;
             prompt)
-                if choice=$(UI_TITLE='Prompt processing' ui --cancel-label Back --default-item "$PROMPT_PROCESSING" --menu 'Tune processing of input text. Generation speed may not improve.\nLarge batch needs more memory; use Default if unsure.' 14 80 3 \
+                if choice=$(UI_TITLE='Prompt processing' menu --default-item "$PROMPT_PROCESSING" --menu 'Tune processing of input text. Generation speed may not improve.\nLarge batch needs more memory; use Default if unsure.' 14 80 3 \
                     auto 'Default: let llama.cpp choose' \
                     low-memory 'Low memory: smaller chunks of input text' \
                     large-batch 'Large batch: try larger chunks of input text'); then PROMPT_PROCESSING="$choice"; fi ;;
@@ -117,7 +117,7 @@ performance_menu() {
 model_menu() {
     local action=model choice selected i UI_TITLE='Model settings'
     while true; do
-        action=$(ui --cancel-label Back --default-item "$action" --menu 'Context includes input and output. Larger contexts need more memory.\nContext size and reasoning depend on model support.' 18 80 5 \
+        action=$(menu --default-item "$action" --menu 'Context includes input and output. Larger contexts need more memory.\nContext size and reasoning depend on model support.' 18 80 5 \
             model "Model         $(compact_text "${MODEL##*/}")" context "Context       $(context_label)" \
             reasoning "Reasoning     $(display_value "$REASONING")" \
             generation "Generation    $(display_value "$(generation_preset)")" back Back) || return 0
@@ -128,11 +128,11 @@ model_menu() {
                 for i in "${!MODELS[@]}"; do
                     if [[ "${MODELS[i]}" == "$MODEL" ]]; then selected="$i"; break; fi
                 done
-                if choice=$(UI_TITLE='Select model' ui --cancel-label Back --default-item "$selected" --menu 'Select a GGUF model' 22 80 14 "${MODEL_OPTIONS[@]}"); then MODEL="${MODELS[choice]}"; fi ;;
+                if choice=$(UI_TITLE='Select model' menu --default-item "$selected" --menu 'Select a GGUF model' 22 80 14 "${MODEL_OPTIONS[@]}"); then MODEL="${MODELS[choice]}"; fi ;;
             context)
                 selected=$CTX_SIZE
                 case "$selected" in auto|4096|8192|16384|24576|32768|49152|65536|131072|262144) ;; *) selected=custom ;; esac
-                if choice=$(UI_TITLE='Context size' ui --cancel-label Back --default-item "$selected" --menu 'Auto lets llama.cpp choose. Fixed values need model support and memory.\nCustom accepts smaller contexts too. 1K = 1024 tokens.' 22 80 11 \
+                if choice=$(UI_TITLE='Context size' menu --default-item "$selected" --menu 'Auto lets llama.cpp choose. Fixed values need model support and memory.\nCustom accepts smaller contexts too. 1K = 1024 tokens.' 22 80 11 \
                     auto 'Auto: native model and memory choices' custom "Custom: enter tokens (current: $(context_label))" \
                     4096 4K 8192 8K 16384 16K 24576 24K 32768 32K 49152 48K 65536 64K 131072 128K 262144 256K); then
                     if [[ "$choice" == custom ]]; then
@@ -142,7 +142,7 @@ model_menu() {
                     else CTX_SIZE=$choice; fi
                 fi ;;
             reasoning)
-                if choice=$(UI_TITLE=Reasoning ui --cancel-label Back --default-item "$REASONING" --menu 'Reasoning depends on model support' 12 64 3 auto Automatic off Off on On); then REASONING="$choice"; fi ;;
+                if choice=$(UI_TITLE=Reasoning menu --default-item "$REASONING" --menu 'Reasoning depends on model support' 12 64 3 auto Automatic off Off on On); then REASONING="$choice"; fi ;;
             generation) generation_menu ;;
             back) return 0 ;;
         esac

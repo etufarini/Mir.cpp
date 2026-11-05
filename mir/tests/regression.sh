@@ -315,6 +315,11 @@ mapfile -t lines < <(configuration_summary)
 [[ ${lines[3]} == Device* && ${lines[4]} == 'Port          9931: IN USE' ]]
 for line in "${lines[@]}"; do (( ${#line} <= 72 )); done
 [[ $(profile_data) == "$before" ]]
+for CTX_SIZE in auto 0 4096 12345 2147483647; do
+    mapfile -t lines < <(configuration_summary)
+    [[ ${lines[2]:38} == 'Reasoning  Auto' ]]
+    (( ${#lines[2]} <= 72 ))
+done
 MODEL=''
 [[ $(configuration_summary) == *'Model         Not selected'* ]]
 '''
@@ -428,20 +433,31 @@ initialize_config "$2"
         assert 'View log' in log and 'Ready' in log
         if launcher == root / 'mir.sh':
             assert 'MIR.CPP / STATION CONTROL' in log and 'Status     Ready' in log
-            assert 'Mir.cpp' in log and 'Llama Launcher' not in log
             assert 'Est. free: unavailable' in log
             assert 'Free GiB:' in log, log
             dialogs = [json.loads(line) for line in log.splitlines()]
+            for args in dialogs:
+                assert args.count('MIR.CPP / STATION CONTROL') == 1
+                title = args[args.index('--title')+1].strip()
+                assert title and 'Mir.cpp' not in title and 'STATION CONTROL' not in title
             menus = [args for args in dialogs if '--menu' in args]
+            assert all(args[args.index('--ok-label')+1] == 'Select' for args in menus)
+            for args in menus:
+                cancel = [value for key, value in zip(args, args[1:]) if key == '--cancel-label'][-1]
+                assert cancel == ('Quit' if 'Launch server' in args else 'Back')
             main = [args for args in menus if 'Launch server' in args]
             assert main[0][main[0].index('--default-item')+1] == 'launch'
             assert any(args[args.index('--default-item')+1] == 'model' for args in main)
             assert any(args[args.index('--default-item')+1] == 'context' for args in menus)
             for args in main:
+                assert args[args.index('--title')+1] == ' Main menu '
                 index = args.index('--menu')
                 assert args[index+5::2] == ['launch','model','performance','server','configurations','paths','quit']
                 assert len(args[index+1].splitlines()) == 6
             assert any('--msgbox' in args and ' Port process details ' in args and '--scrollbar' in args for args in dialogs)
+            assert any('--msgbox' in args and ' Information ' in args for args in dialogs)
+            assert all(args[args.index('--title')+1] == ' Server log ' and '--exit-label' in args
+                       for args in dialogs if '--textbox' in args)
         args = (work / 'args').read_bytes()
         assert b'--ctx-size\x008192\x00' in args and b'--batch-size\x00512\x00' in args
         if launcher == root / 'mir.sh':
