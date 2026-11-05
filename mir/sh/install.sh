@@ -83,7 +83,7 @@ main() {
         --output "$STAGE/source.tar.gz" 9>&-
 
     # Extract only the runtime files and documentation, never arbitrary archive paths.
-    FILES=(mir.sh dialogrc
+    FILES=(mir.sh dialogrc sh/uninstall.sh
         lib/config.sh lib/paths.sh lib/gguf.py lib/profiles.sh lib/processes.sh lib/server.sh lib/memory.sh
         lib/tui/common.sh lib/tui/folders.sh lib/tui/settings.sh lib/tui/profiles.sh lib/tui/main.sh)
     MEMBERS=()
@@ -108,6 +108,10 @@ main() {
     WRAPPER=$(mktemp "$BIN_DIR/.mir.XXXXXXXX")
     {
         printf '#!/usr/bin/env bash\n%s\n' "$MARKER"
+        # shellcheck disable=SC2016 # Expand the argument in the generated wrapper.
+        printf 'if [[ ${1:-} == --uninstall ]]; then\n    shift\n'
+        printf '    exec bash %q %q %q "$@"\nfi\n' \
+            "$INSTALL_DIR/current/sh/uninstall.sh" "$INSTALL_DIR" "$COMMAND"
         printf 'exec %q "$@"\n' "$INSTALL_DIR/current/mir.sh"
     } > "$WRAPPER"
     chmod +x -- "$WRAPPER"
