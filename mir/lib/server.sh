@@ -209,6 +209,6 @@ run_server() {
     RESULT=0
     wait "$SERVER_PID" || RESULT=$?
     SERVER_PID=""
-    if "$TUI" && (( RESULT != 0 )); then ui --textbox "$LOG_FILE" 22 80 || true; fi
+    if "$TUI" && (( RESULT != 0 )); then view_log; fi
     exit "$RESULT"
 }

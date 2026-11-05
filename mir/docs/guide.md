@@ -49,7 +49,7 @@ sudo; correct the permissions and retry, or reinstall to repair a partial remova
 
 ## Using the menu
 
-Use the arrow keys to select an item, **Enter** to open it, and **Tab** to move between buttons. Cancel an individual setting with **Back** or **Esc** to keep its previous value. **Quit** or **Esc** on the main screen exits the launcher.
+Use the arrow keys to highlight an item, **Enter** or **Select** to open it, and **Tab** to move between buttons. Menus offer **Select / Back**; the main screen offers **Select / Quit**. Cancel an individual setting with **Back** or **Esc** to keep its previous value. **Quit** or **Esc** on the main screen exits the launcher.
 
 The main screen shows the current configuration and model, context and reasoning on one line, then device, port status and estimated free memory. Long names are shortened in summaries, keeping their beginning and end; stored values are unchanged. Launch server is first; setup and management menus follow. Internal menu codes are hidden to keep the display clear at 80×24 characters. It has seven entries:
 
@@ -71,7 +71,7 @@ After you select **Launch server**, loading may take a while. The browser opens 
 
 The running screen offers **View log** for details and **Stop server** to stop the model and exit. Closing the browser alone does not stop the server. Logs are temporary and are removed when the launcher exits.
 
-The interface follows the Mir.cpp logo palette: a black background, light text, white-on-blue titles, selected items and active buttons, and thin light borders without shadows. A compact MIR.CPP / STATION CONTROL header identifies every screen. Aligned summaries separate configuration, model settings and server status, with consistent spacing throughout. Keep the `lib/` folder and `dialogrc` beside the script when moving the launcher; the theme applies only to this launcher. Exact shades and the monospaced font follow your terminal settings; the launcher does not redefine the terminal palette or change fonts. Status labels remain explicit without color, and the menus fit an 80×24 terminal.
+The interface follows the Mir.cpp logo palette: a black background, light text, white-on-blue titles, selected items and active buttons, and thin light borders without shadows. A compact MIR.CPP / STATION CONTROL header identifies every screen once; window titles describe the current task, such as **Main menu**, **Model settings** or **Server log**. Aligned summaries separate configuration, model settings and server status, with consistent spacing throughout. Keep the `lib/` folder and `dialogrc` beside the script when moving the launcher; the theme applies only to this launcher. Exact shades and the monospaced font follow your terminal settings; the launcher does not redefine the terminal palette or change fonts. Status labels remain explicit without color, and the menus fit an 80×24 terminal.
 
 ## Folder paths
 

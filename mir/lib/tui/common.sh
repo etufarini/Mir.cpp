@@ -4,10 +4,14 @@
 ui() {
     DIALOGRC="${THEME_FILE:-${DIALOGRC:-/dev/null}}" dialog --stdout --no-tags \
         --no-collapse --backtitle 'MIR.CPP / STATION CONTROL' \
-        --title " ${UI_TITLE:-Mir.cpp / Station control} " "$@"
+        --title " ${UI_TITLE:-Information} " "$@"
 }
 
-message() { ui --msgbox "$1" 12 76; }
+menu() { ui --ok-label Select --cancel-label Back "$@"; }
+
+message() { UI_TITLE=Information ui --msgbox "$1" 12 76; }
+
+view_log() { UI_TITLE='Server log' ui --exit-label Back --textbox "$LOG_FILE" 22 80 || true; }
 
 # Keep summaries on one line while retaining both ends of long names.
 compact_text() {

@@ -42,7 +42,7 @@ configurations_menu() {
     local action=load file choice selected UI_TITLE='Saved configurations'
     local -a files options
     while true; do
-        action=$(ui --cancel-label Back --default-item "$action" --menu "Configuration  $(compact_text "$(profile_status)" 53)\n\nLoad settings for review, or save the current settings." 15 76 5 \
+        action=$(menu --default-item "$action" --menu "Configuration  $(compact_text "$(profile_status)" 53)\n\nLoad settings for review, or save the current settings." 15 76 5 \
             load 'Load configuration' update 'Update current' save 'Save as new configuration' delete 'Delete configuration' back Back) || return 0
         case "$action" in
             save) save_profile ;;
@@ -60,7 +60,7 @@ configurations_menu() {
                     options+=("$file" "${choice%.conf}")
                 done
                 if [[ "$action" == delete ]]; then choice='Delete configuration'; else choice='Load configuration'; fi
-                choice=$(UI_TITLE="$choice" ui --cancel-label Back --default-item "$selected" --menu 'Select a saved configuration' 20 80 12 "${options[@]}") || continue
+                choice=$(UI_TITLE="$choice" menu --default-item "$selected" --menu 'Select a saved configuration' 20 80 12 "${options[@]}") || continue
                 file="${files[choice]}"
                 if [[ "$action" == delete ]]; then
                     if UI_TITLE='Delete configuration' ui --yesno "Delete configuration '${file##*/}'?" 9 76; then

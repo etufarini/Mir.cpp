@@ -17,7 +17,7 @@ select_folder() {
             folders+=("$entry")
             options+=("${#folders[@]}" "${entry##*/}/")
         done < <(find "$current" -mindepth 1 -maxdepth 1 -print0 | sort -z)
-        choice=$(ui --cancel-label Back --ok-label Select --default-item "$selected" \
+        choice=$(menu --default-item "$selected" \
             --menu "Current folder: $current\n\nActions above; folders below. Enter opens a folder or runs an action.\nChoose Use this folder to confirm; Back/Esc cancels." 22 80 12 "${options[@]}") || return 1
         selected="$choice"
         case "$choice" in
@@ -41,7 +41,7 @@ select_folder() {
 paths_menu() {
     local action=llama choice initial previous UI_TITLE=Folders
     while true; do
-        action=$(ui --cancel-label Back --default-item "$action" --menu "llama.cpp     $(compact_text "${LLAMA_CPP_PATH:-Not configured}")\nModels        $(compact_text "${MODELS_DIR:-Not configured}")\n\nChoose a folder. Valid changes are saved automatically." 17 80 3 \
+        action=$(menu --default-item "$action" --menu "llama.cpp     $(compact_text "${LLAMA_CPP_PATH:-Not configured}")\nModels        $(compact_text "${MODELS_DIR:-Not configured}")\n\nChoose a folder. Valid changes are saved automatically." 17 80 3 \
             llama 'llama.cpp folder' models 'Models folder' back Back) || return 0
         [[ "$action" != back ]] || return 0
         if [[ "$action" == llama ]]; then initial="$LLAMA_CPP_PATH"; else initial="$MODELS_DIR"; fi

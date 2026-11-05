@@ -34,7 +34,7 @@ stop_listener() {
         identity=$(ps -p "$pid" -o lstart=) || continue
         targets[$pid]="$identity"
     done
-    ui --scrollbar --yesno "Send SIGTERM to these processes? Other services may be affected.\nUse Up/Down to scroll through the process details.\n\n$PORT_STATUS" 22 80 || return 0
+    UI_TITLE='Stop processes' ui --scrollbar --yesno "Send SIGTERM to these processes? Other services may be affected.\nUse Up/Down to scroll through the process details.\n\n$PORT_STATUS" 22 80 || return 0
     for pid in "${!targets[@]}"; do
         if [[ "$(ps -p "$pid" -o lstart= || true)" == "${targets[$pid]}" ]]; then
             kill -TERM "$pid" 2>/dev/null || message "Cannot stop PID $pid. It may belong to another user."
@@ -52,7 +52,7 @@ stop_listener() {
         for pid in "${!targets[@]}"; do
             details+=$'\n'"$(ps -p "$pid" -o pid=,user=,comm= || true)"
         done
-        if ui --scrollbar --yesno "Force stop these processes with SIGKILL?\nUse Up/Down to scroll through the process details.\n\nStill running: ${!targets[*]}\n$details" 22 80; then
+        if UI_TITLE='Force stop processes' ui --scrollbar --yesno "Force stop these processes with SIGKILL?\nUse Up/Down to scroll through the process details.\n\nStill running: ${!targets[*]}\n$details" 22 80; then
             for pid in "${!targets[@]}"; do
                 if [[ "$(ps -p "$pid" -o lstart= || true)" == "${targets[$pid]}" ]]; then
                     kill -KILL "$pid" 2>/dev/null || message "Cannot force stop PID $pid."
