@@ -43,6 +43,15 @@ Installs for your user in `~/.local/share/mir.cpp/` and creates
 `~/.local/bin/mir`, without sudo. Run the same command again to update.
 Close the launcher before updating.
 
+To remove the installed program, stop the server and close the launcher, then run:
+
+```bash
+mir --uninstall
+```
+
+Confirm when prompted. Models, llama.cpp and saved configurations are kept.
+For removal without a prompt, use `mir --uninstall --yes`.
+
 ## Start
 
 ```bash

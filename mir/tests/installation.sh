@@ -5,6 +5,7 @@ TEST_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 python3 - "$TEST_ROOT" <<'PY'
 import io
 import os
+import pty
 from pathlib import Path
 import subprocess
 import shutil
@@ -23,7 +24,7 @@ with tempfile.TemporaryDirectory(prefix='mir-install-') as temporary:
     bin_dir = work / 'mock-bin'
     bin_dir.mkdir()
     archive = work / 'source.tar.gz'
-    files = ['mir.sh', 'dialogrc'] + [
+    files = ['mir.sh', 'dialogrc', 'sh/uninstall.sh'] + [
         str(p.relative_to(root)) for p in sorted((root / 'lib').rglob('*')) if p.suffix in ('.sh', '.py')]
     documents = ['README.md'] + [
         'mir/' + str(p.relative_to(root)) for p in sorted((root / 'docs').rglob('*')) if p.is_file()]
@@ -155,7 +156,7 @@ printf '%s\\0' "$@" > "$TEST_ARGS"
         assert (install_dir / 'current').resolve() == updated
         assert command.read_bytes() == snapshot
         assert set((install_dir / 'releases').iterdir()) == releases
-    for omitted in ['lib/tui/main.sh', 'lib/memory.sh', 'lib/gguf.py', 'dialogrc', *documents]:
+    for omitted in ['lib/tui/main.sh', 'lib/memory.sh', 'lib/gguf.py', 'dialogrc', 'sh/uninstall.sh', *documents]:
         package(omit=omitted)
         install(success=False)
         assert (install_dir / 'current').resolve() == updated
@@ -268,6 +269,106 @@ printf '%s\\0' "$@" > "$TEST_ARGS"
     assert (custom_data / 'mir.cpp/current/lib/config.sh').is_file()
     assert (other_home / '.local/bin/mir').is_file()
     print('PASS: XDG data directory')
+
+    def uninstall(arguments=(), overrides=None, success=True):
+        result = subprocess.run([str(command), '--uninstall', *arguments],
+                                env=env | (overrides or {}), cwd='/', input=b'',
+                                capture_output=True, timeout=5)
+        assert (result.returncode == 0) == success, (result.stdout, result.stderr)
+        return result
+
+    # Invalid arguments and unavailable confirmation must leave everything intact.
+    installed = (install_dir / 'current').resolve()
+    result = uninstall(success=False)
+    assert b'Confirmation requires a terminal' in result.stderr
+    uninstall(['--unknown'], success=False)
+    uninstall(['--yes', 'extra'], success=False)
+    assert command.is_file() and installed.is_dir()
+    # Exercise the real terminal prompt, including its default refusal and approval.
+    def confirm(answer):
+        master, slave = pty.openpty()
+        try:
+            process = subprocess.Popen([str(command), '--uninstall'], env=env,
+                                       stdin=slave, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            os.write(master, answer)
+            output, error = process.communicate(timeout=5)
+            assert process.returncode == 0, (output, error)
+            return output
+        finally:
+            os.close(master)
+            os.close(slave)
+    assert b'Uninstallation canceled' in confirm(b'\n')
+    assert command.is_file() and installed.is_dir()
+    print('PASS: uninstall argument validation, non-interactive refusal and canceled confirmation')
+
+    # Share the installer's lock; no files are removed while it is held.
+    with lock_file.open() as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        result = uninstall(['--yes'], success=False)
+        assert b'Another Mir.cpp installation or removal' in result.stderr
+    assert command.is_file() and installed.is_dir()
+    # Calling the script directly cannot bypass command ownership or release checks.
+    script = installed / 'sh/uninstall.sh'
+    def direct_remove():
+        result = subprocess.run(['bash', str(script), str(install_dir), str(command), '--yes'],
+                                env=env, capture_output=True, timeout=5)
+        assert result.returncode != 0, result.stderr
+        return result
+    snapshot = command.read_bytes()
+    command.write_text('#!/bin/sh\necho unrelated\n')
+    assert b'does not belong' in direct_remove().stderr
+    command.write_bytes(snapshot)
+    moved_command = command.with_name('original-mir')
+    command.rename(moved_command)
+    command.symlink_to(moved_command)
+    assert b'has been replaced' in direct_remove().stderr
+    command.unlink()
+    moved_command.rename(command)
+    # A replaced active link must not allow deletion of a foreign target.
+    original_target = os.readlink(install_dir / 'current')
+    (install_dir / 'current').unlink()
+    (install_dir / 'current').symlink_to(previous / 'releases/old')
+    assert b'active installed copy' in direct_remove().stderr
+    (install_dir / 'current').unlink()
+    (install_dir / 'current').symlink_to(original_target)
+    print('PASS: uninstall lock, unrelated command, symlink and active-release protection')
+
+    # Leave a stale managed release, unrelated files, and a link to external data.
+    stale = install_dir / 'releases/install.12345678'
+    stale.mkdir()
+    (stale / 'old.sh').write_text('old program\n')
+    unknown = install_dir / 'releases/personal'
+    unknown.mkdir()
+    (unknown / 'keep').write_text('personal data\n')
+    linked = install_dir / 'releases/install.ABCDEFGH'
+    linked.symlink_to(previous, target_is_directory=True)
+    (install_dir / 'keep').write_text('unrelated file\n')
+    result = uninstall(['--yes'], {'TEST_CLEANUP':'fail'}, success=False)
+    assert b'Check permissions and retry' in result.stderr
+    assert command.is_file() and installed.is_dir() and stale.is_dir()
+    # The stored paths work even after HOME and both XDG directories change.
+    result = uninstall(['--yes'], {'HOME':str(other_home), 'XDG_DATA_HOME':str(custom_data),
+                                 'XDG_CONFIG_HOME':str(work / 'different config')})
+    assert b'Uninstallation complete' in result.stdout
+    assert not command.exists() and not installed.exists() and not stale.exists()
+    assert not (install_dir / 'current').is_symlink()
+    assert (unknown / 'keep').read_text() == 'personal data\n'
+    assert (install_dir / 'keep').read_text() == 'unrelated file\n'
+    assert linked.is_symlink()
+    assert lock_file.is_file()
+    assert model.is_file() and (server_dir / 'build/bin/llama-server').is_file()
+    assert (config / 'paths.conf').read_text() == 'existing paths\n'
+    assert (config / 'profiles/Personal.conf').read_text() == 'existing profile\n'
+    assert (other_home / '.local/bin/mir').is_file()
+    assert (custom_data / 'mir.cpp/current/lib/config.sh').is_file()
+    print('PASS: removal, failure reporting, original paths and preservation of personal and external files')
+    # A clean reinstall works with the retained lock, followed by confirmed removal.
+    # Remove the test's foreign symlink before reinstall: only removal promises to keep it.
+    linked.unlink()
+    install()
+    assert b'Uninstallation complete' in confirm(b'y\n')
+    assert not command.exists() and not (install_dir / 'current').exists()
+    print('PASS: reinstall after removal and interactive confirmation')
     assert all(path.read_bytes() == data for path, data in previous_files.items())
     assert os.readlink(previous / 'current') == 'releases/old'
     assert subprocess.check_output([str(previous_command)]) == b'previous command\n'
