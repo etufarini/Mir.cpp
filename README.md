@@ -10,7 +10,7 @@ This release targets Linux with CPU, Vulkan and CUDA builds of llama.cpp.
 CUDA still needs validation on NVIDIA hardware.
 Named after the Mir space station.
 
-![Main menu showing the current configuration and launch controls](mir/docs/screenshots/main-menu.png)
+[<img src="mir/docs/screenshots/main-menu.png" alt="Main menu showing the current configuration and launch controls" width="640">](mir/docs/screenshots/main-menu.png)
 
 *Review your model and server settings before launching.*
 
@@ -58,7 +58,7 @@ If the command is not found, use `~/.local/bin/mir` or add `~/.local/bin` to you
 3. Select **Launch server**. The browser opens when ready, normally at
    `http://127.0.0.1:9931`. Keep the terminal open while chatting.
 
-![Model settings menu with model, context, reasoning and generation controls](mir/docs/screenshots/model-settings.png)
+[<img src="mir/docs/screenshots/model-settings.png" alt="Model settings menu with model, context, reasoning and generation controls" width="640">](mir/docs/screenshots/model-settings.png)
 
 *Context size and reasoning depend on model support. Larger contexts need more memory.*
 
