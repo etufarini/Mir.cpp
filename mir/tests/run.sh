@@ -35,6 +35,8 @@ fi
 if [[ "$suite" == macos || "$suite" == all ]]; then
     lint_adapter macos
     run platform/macos.sh
+    run platform/macos-build.sh
+    run build.sh macos
     run installation.sh Darwin
     run native/macos.sh
 fi

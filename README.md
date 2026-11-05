@@ -42,9 +42,10 @@ No shell or PATH configuration is needed for these dependencies.
 Linux uses `xdg-utils` to open the browser; macOS uses `open`.
 You can also open the address manually.
 On Ubuntu/Debian, the installer offers to install missing launcher dependencies.
-Linux users can build llama.cpp from **Folders → Install / update llama.cpp**.
-On macOS, select an existing CPU/Metal build. GPU drivers and model downloads
-remain separate; see the [llama.cpp build instructions](https://github.com/ggml-org/llama.cpp/blob/master/docs/build.md).
+Build llama.cpp from **Folders → Install / update llama.cpp** on Linux or macOS.
+macOS build setup requires Apple command line tools and offers missing Homebrew
+packages. GPU drivers and model downloads remain separate; see the
+[llama.cpp build instructions](https://github.com/ggml-org/llama.cpp/blob/master/docs/build.md).
 
 ## Quick install
 
@@ -74,8 +75,8 @@ mir
 
 If the command is not found, use `~/.local/bin/mir` or add `~/.local/bin` to your PATH.
 
-1. Open **Folders** to select your **llama.cpp folder**. On Linux, you can use
-   **Install / update llama.cpp** to build CPU, Vulkan or CUDA; its path is saved.
+1. Open **Folders → Install / update llama.cpp** to build CPU/Vulkan/CUDA on Linux
+   or CPU/Metal on macOS. You can also select an existing **llama.cpp folder**.
 2. Choose your **Models folder** in **Folders**. Models can be organized in subfolders.
 3. Choose a GGUF from the list in **Model settings → Model**, then review the settings.
    Start with **Auto** and **Default** values.

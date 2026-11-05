@@ -2,7 +2,7 @@
 # Isolated build/update and package-manager checks; no real packages or models.
 set -euo pipefail
 TEST_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
-python3 - "$TEST_ROOT" <<'PY'
+python3 - "$TEST_ROOT" "${1:-linux}" <<'PY'
 import hashlib
 import io
 import json
@@ -21,6 +21,9 @@ import termios
 import time
 
 root = Path(sys.argv[1])
+adapter = sys.argv[2]
+assert adapter in ('linux', 'macos')
+gpu = 'metal' if adapter == 'macos' else 'vulkan'
 with tempfile.TemporaryDirectory(prefix='mir-build-test-') as temporary:
     work = Path(temporary)
     home = work / 'home with spaces'
@@ -68,6 +71,7 @@ if [[ ${TEST_SLOW_PROBE:-0} == 1 ]]; then
 fi
 if [[ ${1:-} == --list-devices ]]; then
     echo 'Available devices:'
+    echo '  BLAS: CPU library (0 MiB, 0 MiB free)'
     if [[ ${TEST_NO_DEVICE:-0} == 0 ]]; then echo '  Arbitrary0: Test accelerator'; fi
 else echo 'version/help fixture'; fi
 SERVER
@@ -97,8 +101,8 @@ exec "$TEST_REAL_PS" "$@"
     env = {k: v for k, v in os.environ.items() if not k.startswith(('MIR_', 'SPUTNIK_', 'LLAMA_', 'XDG_'))}
     env.update(HOME=str(home), XDG_CONFIG_HOME=str(home / 'config'),
                XDG_DATA_HOME=str(home / 'data'), PATH=str(commands) + ':' + os.environ['PATH'],
-               MIR_ROOT=str(root), TEST_WORK=str(work), TEST_REAL_PS=shutil.which('ps'))
-    sources = 'source "$MIR_ROOT/tests/helpers/core.sh"\nload_test_core linux\n'
+               MIR_ROOT=str(root), TEST_GPU=gpu, TEST_WORK=str(work), TEST_REAL_PS=shutil.which('ps'))
+    sources = 'source "$MIR_ROOT/tests/helpers/core.sh"\nload_test_core ' + adapter + '\n'
     init = '''initialize_config
 mkdir -p "$CONFIG_DIR"
 message() { printf '%s\\n' "$*" >> "$TEST_WORK/messages"; }
@@ -129,9 +133,9 @@ read_build "$LLAMA_CPP_PATH"
 first=$LLAMA_CPP_PATH
 [[ $SERVER == "$first/build/bin/llama-server" && -f "$HOME/external/keep" ]]
 [[ $DEVICE == none && $CTX_SIZE == 4096 && $MODEL == "$HOME/model.gguf" ]]
-install_build b2 vulkan 2
+install_build b2 "$TEST_GPU" 2
 read_build "$LLAMA_CPP_PATH"
-[[ $BUILD_TAG == b2 && $BUILD_BACKEND == vulkan && $BUILD_PREVIOUS == "${first##*/}" ]]
+[[ $BUILD_TAG == b2 && $BUILD_BACKEND == "$TEST_GPU" && $BUILD_PREVIOUS == "${first##*/}" ]]
 second=$LLAMA_CPP_PATH
 CAPABILITIES_SERVER=old; MEMORY_KEY=old
 activate_build "$first"
@@ -139,15 +143,16 @@ activate_build "$first"
 activate_build "$second"
 [[ $LLAMA_CPP_PATH == "$second" ]]
 ''')
-    assert b'-DGGML_VULKAN=ON\0' in (work / 'cmake.args').read_bytes()
+    assert ('-DGGML_' + gpu.upper() + '=ON\0').encode() in (work / 'cmake.args').read_bytes()
     assert b'--target\0llama-fit-params\0' in (work / 'cmake.args').read_bytes()
-    check('''stage=$(mktemp -d "$(build_root)/builds/build.XXXXXXXX")
-build_release "$stage" b2 cuda 2 ''
-read_build "$stage"
-[[ $BUILD_BACKEND == cuda ]]
-rm -rf -- "$stage"
-''')
-    assert b'-DGGML_CUDA=ON\0' in (work / 'cmake.args').read_bytes()
+    if adapter == 'linux':
+        check('''stage=$(mktemp -d "$(build_root)/builds/build.XXXXXXXX")
+    build_release "$stage" b2 cuda 2 ''
+    read_build "$stage"
+    [[ $BUILD_BACKEND == cuda ]]
+    rm -rf -- "$stage"
+    ''')
+        assert b'-DGGML_CUDA=ON\0' in (work / 'cmake.args').read_bytes()
     print('PASS: install, update, backend flags, restore and preserved model settings')
 
     ui_archive = work / 'ui.tar.gz'
@@ -188,6 +193,20 @@ if install_build v1 cpu 2; then exit 1; fi
 ''', ui_env | {'TEST_UI_META':json.dumps(metadata)})
         assert not (work / 'escaped-ui').exists()
     print('PASS: exact-release Web UI, SHA-256, disabled latest fallback and missing/mismatched/unsafe asset rejection')
+    linked = work / 'linked builds'
+    linked.symlink_to(home / 'data/mir.cpp/llama.cpp/builds', target_is_directory=True)
+    check('''stage=$(mktemp -d "$TEST_WORK/linked builds/build.XXXXXXXX")
+build_release "$stage" linked cpu 2 ''
+[[ -x "$stage/build/bin/llama-server" ]]
+rm -rf -- "$stage"
+''')
+    cmake_args = (work / 'cmake.args').read_bytes().split(b'\0')[:-1]
+    for index, arg in enumerate(cmake_args[:-1]):
+        if arg in (b'-S', b'-B'):
+            path = os.fsdecode(cmake_args[index + 1])
+            assert path == str(Path(path).resolve()), path
+    print('PASS: symlinked staging paths resolve consistently for upstream CMake UI packaging')
+
 
     for failure in ('TEST_CLONE_FAIL', 'TEST_NOT_TAG', 'TEST_CMAKE_FAIL', 'TEST_PROBE_FAIL', 'TEST_NO_UI', 'TEST_NO_DEVICE'):
         check('''previous=$LLAMA_CPP_PATH; before=$(cat "$PATHS_FILE")
@@ -293,6 +312,10 @@ build_menu
 ''')
     assert 'already the latest' in (work / 'messages').read_text()
     print('PASS: data-only metadata, contained managed paths and current-release menu')
+
+    if adapter != 'linux':
+        print('PASS: macOS managed CPU/Metal builds, update/restore and worker cancellation fixtures')
+        sys.exit(0)
 
     # Simulated package operations use a pipe for the script and a PTY for consent.
     executable('apt-get', '''#!/usr/bin/env bash

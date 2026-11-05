@@ -141,3 +141,5 @@ platform_build_flags() {
 }
 platform_start_worker() { exec setsid "$@"; }
 platform_build_probe() { timeout --foreground --kill-after=2 30 "$@"; }
+
+platform_install_dependencies() { platform_ensure_dependencies launcher; }

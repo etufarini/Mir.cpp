@@ -9,10 +9,10 @@ main() {
     if [[ "$RUNTIME_BASH" != "$BASH" ]]; then
         # Replace this process so interruption cannot leave a bootstrap parent
         # and a child installer holding the installation lock.
-        exec "$RUNTIME_BASH" -c "$(declare -f detect_platform configure_runtime bootstrap_macos macos_dependency_hint load_platform check_dependencies platform_ensure_dependencies runtime_files main)"$'\nmain "$@"' mir-installer "$@"
+        exec "$RUNTIME_BASH" -c "$(declare -f detect_platform configure_runtime bootstrap_macos macos_dependency_hint load_platform check_dependencies runtime_files main)"$'\nmain "$@"' mir-installer "$@"
     fi
     load_platform "$PLATFORM_ID"
-    platform_ensure_dependencies launcher || exit 1
+    platform_install_dependencies || exit 1
     BROWSER=$(platform_browser_command)
     if ! command -v "$BROWSER" >/dev/null; then
         printf 'WARNING: %s is missing; automatic browser opening will be unavailable.\nOpen the server address manually.\n' "$BROWSER" >&2

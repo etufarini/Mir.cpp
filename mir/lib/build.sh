@@ -103,10 +103,12 @@ PY
 }
 
 build_release() {
-    local stage=$1 tag=$2 backend=$3 jobs=$4 previous=$5 commit devices targets
+    local stage=$1 tag=$2 backend=$3 jobs=$4 previous=$5 commit devices targets line name accelerator=false
     local -a flags=(-DCMAKE_BUILD_TYPE=Release -DLLAMA_BUILD_SERVER=ON
         -DLLAMA_BUILD_TESTS=OFF -DLLAMA_BUILD_EXAMPLES=OFF
         -DGGML_CUDA=OFF -DGGML_VULKAN=OFF)
+    # CMake UI packaging must see one physical path, including through /tmp links.
+    stage=$(cd -- "$stage" && pwd -P) || return 1
     valid_build_tag "$tag" && [[ "$jobs" =~ ^([1-9]|[1-5][0-9]|6[0-4])$ ]] || return 1
     platform_build_flags "$backend" || return 1
     flags+=("${BUILD_FLAGS[@]}")
@@ -137,9 +139,18 @@ build_release() {
     platform_build_probe "$stage/build/bin/llama-server" --help || return 1
     devices=$(platform_build_probe "$stage/build/bin/llama-server" --list-devices) || return 1
     printf '%s\n' "$devices"
-    if [[ "$backend" != cpu && ! "$devices" =~ (^|$'\n')[[:space:]]+[^[:space:]]+:[[:space:]] ]]; then
-        printf 'No accelerator is available. Check GPU drivers and device permissions before retrying.\n' >&2
-        return 1
+    if [[ "$backend" != cpu ]]; then
+        while IFS= read -r line; do
+            [[ "$line" =~ ^[[:space:]]+([^[:space:]:]+):[[:space:]] ]] || continue
+            name=${BASH_REMATCH[1]}
+            # CPU implementations can appear in --list-devices too (e.g. Accelerate).
+            [[ "$name" =~ ^(CPU|BLAS)[0-9]*$ ]] && continue
+            accelerator=true; break
+        done <<< "$devices"
+        if ! "$accelerator"; then
+            printf 'No accelerator is available. Check GPU drivers and device permissions before retrying.\n' >&2
+            return 1
+        fi
     fi
     # Upstream can finish successfully without Web UI assets after a download
     # failure. Do not activate that result for a browser-based launcher.

@@ -74,11 +74,68 @@ platform_listeners() {
     fi
 }
 
+platform_install_dependencies() { check_dependencies install; }
+
 platform_ensure_dependencies() {
-    if [[ "$1" == launcher ]]; then check_dependencies install;
-    else printf 'Managed llama.cpp builds are not available on this platform yet.\n' >&2; return 1; fi
+    local group=$1 index tool
+    local -a tools=(cmake python3 gtimeout) formulas=(cmake python coreutils) missing=()
+    case "$group" in
+        metal) return 0 ;;
+        build) ;;
+        *) printf 'Unknown dependency group: %s\n' "$group" >&2; return 1 ;;
+    esac
+    if ! xcode-select -p >/dev/null 2>&1 || ! xcrun --find clang >/dev/null 2>&1 ||
+        ! xcrun --find clang++ >/dev/null 2>&1 || ! xcrun --sdk macosx --show-sdk-path >/dev/null 2>&1; then
+        printf 'Apple command line tools and a macOS SDK are required. Run xcode-select --install, finish installation, then retry.\n' >&2
+        return 1
+    fi
+    for tool in git make cc c++; do
+        command -v "$tool" >/dev/null || { printf 'Required developer tool not found: %s. Check your Apple command line tools installation.\n' "$tool" >&2; return 1; }
+    done
+    for index in "${!tools[@]}"; do
+        command -v "${tools[index]}" >/dev/null || missing+=("${formulas[index]}")
+    done
+    (( ${#missing[@]} > 0 )) || return 0
+    command -v brew >/dev/null || { printf 'Homebrew is required. Install it, then run: brew install %s\n' "${missing[*]}" >&2; return 1; }
+    if [[ -n ${2:-} ]]; then
+        "$2" macos_install_build_packages "${missing[@]}" || return 1
+    else
+        macos_install_build_packages "${missing[@]}" || return 1
+    fi
+    for tool in "${tools[@]}"; do
+        command -v "$tool" >/dev/null || { printf 'Required command still unavailable after installation: %s\n' "$tool" >&2; return 1; }
+    done
 }
-platform_build_backends() { return 0; }
-platform_build_flags() { return 1; }
-platform_start_worker() { return 1; }
-platform_build_probe() { return 1; }
+
+macos_install_build_packages() {
+    local answer
+    printf 'Missing build dependency packages: %s\n' "$*" >&2
+    if [[ ! -r /dev/tty || ! -w /dev/tty ]] || ! { printf 'Install these packages with Homebrew? [y/N] ' > /dev/tty; } 2>/dev/null; then
+        printf 'A terminal is required to approve installation. Run: brew install %s\n' "$*" >&2
+        return 1
+    fi
+    IFS= read -r answer < /dev/tty || return 1
+    case "$answer" in y|Y|yes|YES) ;; *) printf 'Dependency installation canceled.\n' >&2; return 1 ;; esac
+    HOMEBREW_NO_AUTO_UPDATE=1 brew install --formula "$@" < /dev/tty || {
+        printf 'Homebrew installation failed. Check its output and retry; the previous llama.cpp build was kept.\n' >&2
+        return 1
+    }
+}
+
+platform_build_backends() { printf '%s\n' cpu CPU metal 'Metal (GPU)'; }
+platform_build_flags() {
+    case "$1" in
+        cpu) BUILD_FLAGS=(-DGGML_METAL=OFF) ;;
+        metal) BUILD_FLAGS=(-DGGML_METAL=ON) ;;
+        *) return 1 ;;
+    esac
+}
+platform_start_worker() {
+    # Python supplies setsid on macOS without an extra runtime package.
+    exec python3 -c 'import os, sys; os.setsid(); os.execvp(sys.argv[1], sys.argv[1:])' "$@"
+}
+platform_build_probe() {
+    local timer=gtimeout
+    if ! command -v "$timer" >/dev/null; then timer=timeout; fi
+    "$timer" --foreground --kill-after=2 30 "$@"
+}

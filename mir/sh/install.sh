@@ -169,6 +169,7 @@ install_dependency_packages() {
         return 1
     }
 }
+platform_install_dependencies() { platform_ensure_dependencies launcher; }
             ;;
         macos)
 platform_required_tools() { REQUIRED_TOOLS=(curl gfind gmv lsof netstat); }
@@ -183,10 +184,7 @@ platform_move() {
     esac
 }
 platform_dependency_hint() { macos_dependency_hint; }
-platform_ensure_dependencies() {
-    if [[ "$1" == launcher ]]; then check_dependencies install;
-    else printf 'Managed llama.cpp builds are not available on this platform yet.\n' >&2; return 1; fi
-}
+platform_install_dependencies() { check_dependencies install; }
             ;;
     esac
     PLATFORM_LOADED=$1
@@ -234,10 +232,10 @@ main() {
     if [[ "$RUNTIME_BASH" != "$BASH" ]]; then
         # Replace this process so interruption cannot leave a bootstrap parent
         # and a child installer holding the installation lock.
-        exec "$RUNTIME_BASH" -c "$(declare -f detect_platform configure_runtime bootstrap_macos macos_dependency_hint load_platform check_dependencies platform_ensure_dependencies runtime_files main)"$'\nmain "$@"' mir-installer "$@"
+        exec "$RUNTIME_BASH" -c "$(declare -f detect_platform configure_runtime bootstrap_macos macos_dependency_hint load_platform check_dependencies runtime_files main)"$'\nmain "$@"' mir-installer "$@"
     fi
     load_platform "$PLATFORM_ID"
-    platform_ensure_dependencies launcher || exit 1
+    platform_install_dependencies || exit 1
     BROWSER=$(platform_browser_command)
     if ! command -v "$BROWSER" >/dev/null; then
         printf 'WARNING: %s is missing; automatic browser opening will be unavailable.\nOpen the server address manually.\n' "$BROWSER" >&2
