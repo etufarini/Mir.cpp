@@ -73,3 +73,12 @@ platform_listeners() {
         fi
     fi
 }
+
+platform_ensure_dependencies() {
+    if [[ "$1" == launcher ]]; then check_dependencies install;
+    else printf 'Managed llama.cpp builds are not available on this platform yet.\n' >&2; return 1; fi
+}
+platform_build_backends() { return 0; }
+platform_build_flags() { return 1; }
+platform_start_worker() { return 1; }
+platform_build_probe() { return 1; }

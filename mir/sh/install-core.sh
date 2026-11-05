@@ -9,10 +9,10 @@ main() {
     if [[ "$RUNTIME_BASH" != "$BASH" ]]; then
         # Replace this process so interruption cannot leave a bootstrap parent
         # and a child installer holding the installation lock.
-        exec "$RUNTIME_BASH" -c "$(declare -f detect_platform configure_runtime bootstrap_macos macos_dependency_hint load_platform check_dependencies runtime_files main)"$'\nmain "$@"' mir-installer "$@"
+        exec "$RUNTIME_BASH" -c "$(declare -f detect_platform configure_runtime bootstrap_macos macos_dependency_hint load_platform check_dependencies platform_ensure_dependencies runtime_files main)"$'\nmain "$@"' mir-installer "$@"
     fi
     load_platform "$PLATFORM_ID"
-    check_dependencies install || exit 1
+    platform_ensure_dependencies launcher || exit 1
     BROWSER=$(platform_browser_command)
     if ! command -v "$BROWSER" >/dev/null; then
         printf 'WARNING: %s is missing; automatic browser opening will be unavailable.\nOpen the server address manually.\n' "$BROWSER" >&2
@@ -72,7 +72,8 @@ main() {
     tar -xzf "$STAGE/source.tar.gz" --no-same-owner --no-same-permissions \
         --strip-components=2 -C "$STAGE" -- "${MEMBERS[@]}" 9>&-
     DOCUMENTS=(README.md mir/docs/guide.md mir/docs/images/logo.png
-        mir/docs/screenshots/main-menu.png mir/docs/screenshots/model-settings.png)
+        mir/docs/screenshots/main-menu.png mir/docs/screenshots/model-settings.png
+        mir/docs/screenshots/llama-setup.png)
     MEMBERS=()
     for file in "${DOCUMENTS[@]}"; do MEMBERS+=("Mir.cpp-main/$file"); done
     tar -xzf "$STAGE/source.tar.gz" --no-same-owner --no-same-permissions \
@@ -124,7 +125,7 @@ main() {
         *":$BIN_DIR:"*) printf 'You can also run: mir\n' ;;
         *) printf 'To use the mir command, add %s to your PATH.\n' "$BIN_DIR" ;;
     esac
-    printf 'Select your existing llama.cpp build and GGUF model folders in the launcher.\n'
+    printf 'In Folders, select a llama.cpp build or use Install / update llama.cpp where available, then choose your models folder.\n'
 }
 
 main "$@"

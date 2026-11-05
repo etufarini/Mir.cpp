@@ -41,7 +41,10 @@ Mir.cpp finds Homebrew Bash and tools automatically, even with the macOS system 
 No shell or PATH configuration is needed for these dependencies.
 Linux uses `xdg-utils` to open the browser; macOS uses `open`.
 You can also open the address manually.
-The installer does not build llama.cpp, install GPU drivers or download models.
+On Ubuntu/Debian, the installer offers to install missing launcher dependencies.
+Linux users can build llama.cpp from **Folders → Install / update llama.cpp**.
+On macOS, select an existing CPU/Metal build. GPU drivers and model downloads
+remain separate; see the [llama.cpp build instructions](https://github.com/ggml-org/llama.cpp/blob/master/docs/build.md).
 
 ## Quick install
 
@@ -50,7 +53,8 @@ curl -fsSL https://raw.githubusercontent.com/etufarini/Mir.cpp/main/mir/sh/insta
 ```
 
 Installs for your user in `~/.local/share/mir.cpp/` and creates
-`~/.local/bin/mir`, without sudo. Run the same command again to update.
+`~/.local/bin/mir`. Only dependency installation uses sudo and may ask for your
+password. Run the same command again to update Mir.cpp.
 Close the launcher before updating.
 
 To remove the installed program, stop the server and close the launcher, then run:
@@ -70,12 +74,16 @@ mir
 
 If the command is not found, use `~/.local/bin/mir` or add `~/.local/bin` to your PATH.
 
-1. On first launch, choose your **llama.cpp folder** and **Models folder** in **Folders**.
-   Models can be organized in subfolders.
-2. Choose a GGUF from the list in **Model settings → Model**, then review the settings.
+1. Open **Folders** to select your **llama.cpp folder**. On Linux, you can use
+   **Install / update llama.cpp** to build CPU, Vulkan or CUDA; its path is saved.
+2. Choose your **Models folder** in **Folders**. Models can be organized in subfolders.
+3. Choose a GGUF from the list in **Model settings → Model**, then review the settings.
    Start with **Auto** and **Default** values.
-3. Select **Launch server**. The browser opens when ready, normally at
+4. Select **Launch server**. The browser opens when ready, normally at
    `http://127.0.0.1:9931`. Keep the terminal open while chatting.
+
+Update llama.cpp through **Folders → Install / update llama.cpp → Check for updates**.
+Failed builds keep the working version; **Restore previous build** switches back.
 
 [<img src="mir/docs/screenshots/model-settings.png" alt="Model settings menu with model, context, reasoning and generation controls" width="640">](mir/docs/screenshots/model-settings.png)
 

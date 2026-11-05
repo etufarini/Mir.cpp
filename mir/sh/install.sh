@@ -78,7 +78,7 @@ platform_move() {
 }
 platform_dependency_hint() {
     local tool package
-    local -A packages=()
+    local -A hint_packages=()
     for tool in "$@"; do
         case "$tool" in
             bash|curl|tar|gzip|dialog|grep) package="$tool" ;;
@@ -88,11 +88,86 @@ platform_dependency_hint() {
             find) package=findutils ;;
             *) package=coreutils ;;
         esac
-        packages[$package]=1
+        hint_packages[$package]=1
     done
     printf 'On Ubuntu/Debian, install the missing packages and retry:\n  sudo apt install'
-    printf ' %s' "${!packages[@]}"
+    printf ' %s' "${!hint_packages[@]}"
     printf '\n'
+}
+debian_package_manager() {
+    local key value distribution='' related=''
+    if [[ -r /etc/os-release ]]; then
+        while IFS='=' read -r key value; do
+            value=${value#\"}; value=${value%\"}
+            case "$key" in ID) distribution=$value ;; ID_LIKE) related=$value ;; esac
+        done < /etc/os-release
+    fi
+    [[ " $distribution $related " == *' debian '* || " $distribution $related " == *' ubuntu '* ]] &&
+        command -v apt-get >/dev/null && command -v dpkg-query >/dev/null
+}
+platform_ensure_dependencies() {
+    local group=$1 tool package
+    local -a tools packages missing=()
+    case "$group" in
+        launcher)
+            tools=(bash curl tar gzip mktemp chmod mkdir mv ln rm flock dialog ss ps find sort grep cut dirname sleep cp)
+            packages=(bash curl tar gzip coreutils coreutils coreutils coreutils coreutils coreutils util-linux dialog iproute2 procps findutils coreutils grep coreutils coreutils coreutils coreutils) ;;
+        build)
+            tools=(git cmake make cc c++ python3 setsid timeout)
+            packages=(git cmake build-essential build-essential build-essential python3 util-linux coreutils) ;;
+        vulkan) tools=(glslc vulkaninfo); packages=(glslc vulkan-tools) ;;
+        cuda) tools=(nvcc); packages=(nvidia-cuda-toolkit) ;;
+        *) printf 'Unknown dependency group: %s\n' "$group" >&2; return 1 ;;
+    esac
+    for tool in "${!tools[@]}"; do
+        if ! command -v "${tools[tool]}" >/dev/null && [[ " ${missing[*]} " != *" ${packages[tool]} "* ]]; then
+            missing+=("${packages[tool]}")
+        fi
+    done
+    if debian_package_manager; then
+        # Headers and certificates cannot be checked by looking for commands.
+        case "$group" in
+            launcher) packages=(ca-certificates) ;;
+            build) packages=(libssl-dev libcurl4-openssl-dev) ;;
+            vulkan) packages=(libvulkan-dev spirv-headers mesa-vulkan-drivers) ;;
+            *) packages=() ;;
+        esac
+        for package in "${packages[@]}"; do
+            [[ $(dpkg-query -W -f='${Status}' "$package" 2>/dev/null) == 'install ok installed' ]] || missing+=("$package")
+        done
+    elif (( ${#missing[@]} )); then
+        printf 'Missing tools for %s: %s\nAutomatic dependency installation supports Ubuntu/Debian. Install the equivalent packages for your distribution and retry.\n' "$group" "${tools[*]}" >&2
+        return 1
+    fi
+    (( ${#missing[@]} )) || return 0
+    if [[ -n ${2:-} ]]; then
+        "$2" install_dependency_packages "$group" "${missing[@]}"
+    else
+        install_dependency_packages "$group" "${missing[@]}"
+    fi
+}
+install_dependency_packages() {
+    local group=$1 answer
+    shift
+    local -a missing=("$@") command_prefix=()
+    printf 'Missing dependency packages: %s\n' "${missing[*]}" >&2
+    if [[ ! -r /dev/tty || ! -w /dev/tty ]] || ! { printf 'Install these packages with apt-get? [y/N] ' > /dev/tty; } 2>/dev/null; then
+        printf 'A terminal is required to approve installation. Run: sudo apt-get install %s\n' "${missing[*]}" >&2
+        return 1
+    fi
+    IFS= read -r answer < /dev/tty || return 1
+    case "$answer" in y|Y|yes|YES) ;; *) printf 'Dependency installation canceled.\n' >&2; return 1 ;; esac
+    if (( EUID != 0 )); then
+        command -v sudo >/dev/null || { printf 'sudo is unavailable. Ask your administrator to install: %s\n' "${missing[*]}" >&2; return 1; }
+        command_prefix=(sudo)
+    fi
+    "${command_prefix[@]}" apt-get update < /dev/tty || return 1
+    # Prefer NVIDIA's toolkit when its repository is already configured.
+    if [[ "$group" == cuda ]] && apt-cache show cuda-toolkit >/dev/null 2>&1; then missing=(cuda-toolkit); fi
+    "${command_prefix[@]}" apt-get install --no-remove -y "${missing[@]}" < /dev/tty || {
+        printf 'Dependency installation failed. Check your package repositories and retry. GPU drivers are configured separately.\n' >&2
+        return 1
+    }
 }
             ;;
         macos)
@@ -108,6 +183,10 @@ platform_move() {
     esac
 }
 platform_dependency_hint() { macos_dependency_hint; }
+platform_ensure_dependencies() {
+    if [[ "$1" == launcher ]]; then check_dependencies install;
+    else printf 'Managed llama.cpp builds are not available on this platform yet.\n' >&2; return 1; fi
+}
             ;;
     esac
     PLATFORM_LOADED=$1
@@ -139,7 +218,7 @@ check_dependencies() {
     return 1
 }
 runtime_files() {
-    printf '%s\n' mir.sh dialogrc sh/uninstall.sh lib/gguf.py lib/config.sh lib/launcher.sh lib/memory.sh lib/paths.sh lib/platform.sh lib/processes.sh lib/profiles.sh lib/runtime.sh lib/server.sh lib/tui/common.sh lib/tui/folders.sh lib/tui/main.sh lib/tui/profiles.sh lib/tui/settings.sh
+    printf '%s\n' mir.sh dialogrc sh/uninstall.sh lib/gguf.py lib/build.sh lib/config.sh lib/launcher.sh lib/memory.sh lib/paths.sh lib/platform.sh lib/processes.sh lib/profiles.sh lib/runtime.sh lib/server.sh lib/tui/build.sh lib/tui/common.sh lib/tui/folders.sh lib/tui/main.sh lib/tui/profiles.sh lib/tui/settings.sh
     case "$PLATFORM_ID" in
         linux) printf '%s\n' lib/platform/linux.sh ;;
         macos) printf '%s\n' lib/platform/macos.sh lib/platform/macos-bootstrap.sh ;;
@@ -155,10 +234,10 @@ main() {
     if [[ "$RUNTIME_BASH" != "$BASH" ]]; then
         # Replace this process so interruption cannot leave a bootstrap parent
         # and a child installer holding the installation lock.
-        exec "$RUNTIME_BASH" -c "$(declare -f detect_platform configure_runtime bootstrap_macos macos_dependency_hint load_platform check_dependencies runtime_files main)"$'\nmain "$@"' mir-installer "$@"
+        exec "$RUNTIME_BASH" -c "$(declare -f detect_platform configure_runtime bootstrap_macos macos_dependency_hint load_platform check_dependencies platform_ensure_dependencies runtime_files main)"$'\nmain "$@"' mir-installer "$@"
     fi
     load_platform "$PLATFORM_ID"
-    check_dependencies install || exit 1
+    platform_ensure_dependencies launcher || exit 1
     BROWSER=$(platform_browser_command)
     if ! command -v "$BROWSER" >/dev/null; then
         printf 'WARNING: %s is missing; automatic browser opening will be unavailable.\nOpen the server address manually.\n' "$BROWSER" >&2
@@ -218,7 +297,8 @@ main() {
     tar -xzf "$STAGE/source.tar.gz" --no-same-owner --no-same-permissions \
         --strip-components=2 -C "$STAGE" -- "${MEMBERS[@]}" 9>&-
     DOCUMENTS=(README.md mir/docs/guide.md mir/docs/images/logo.png
-        mir/docs/screenshots/main-menu.png mir/docs/screenshots/model-settings.png)
+        mir/docs/screenshots/main-menu.png mir/docs/screenshots/model-settings.png
+        mir/docs/screenshots/llama-setup.png)
     MEMBERS=()
     for file in "${DOCUMENTS[@]}"; do MEMBERS+=("Mir.cpp-main/$file"); done
     tar -xzf "$STAGE/source.tar.gz" --no-same-owner --no-same-permissions \
@@ -270,7 +350,7 @@ main() {
         *":$BIN_DIR:"*) printf 'You can also run: mir\n' ;;
         *) printf 'To use the mir command, add %s to your PATH.\n' "$BIN_DIR" ;;
     esac
-    printf 'Select your existing llama.cpp build and GGUF model folders in the launcher.\n'
+    printf 'In Folders, select a llama.cpp build or use Install / update llama.cpp where available, then choose your models folder.\n'
 }
 
 main "$@"

@@ -39,7 +39,7 @@ configure_tui() {
     scan_models
     if [[ -d "$MODELS_DIR" ]] && (( ${#MODELS[@]} == 0 )); then message 'No GGUF models found. Add models or choose another folder in Folders.'; fi
     if [[ ! -f "$SERVER" || ! -x "$SERVER" || ! -d "$MODELS_DIR" ]]; then
-        message 'Choose your llama.cpp and models folders in Folders. You can change them later from the main menu.'
+        message 'In Folders, install/build llama.cpp or choose an existing build, then select your models folder. You can change these later.'
         paths_menu
     fi
     ACTION=launch

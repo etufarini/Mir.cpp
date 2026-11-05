@@ -16,6 +16,7 @@ import time
 root = Path(sys.argv[1])
 baseline = sys.argv[2]
 launchers = [root / 'mir.sh']
+assert all(path.is_file() for path in launchers)
 if baseline:
     launchers.append(Path(baseline).resolve())
 

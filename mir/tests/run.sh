@@ -28,6 +28,7 @@ fi
 if [[ "$suite" == linux || "$suite" == all ]]; then
     lint_adapter linux
     run platform/linux.sh
+    run build.sh
     run installation.sh Linux
     run native/linux.sh
 fi

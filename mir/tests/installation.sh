@@ -271,8 +271,12 @@ printf '%s\\0' "$@" > "$TEST_ARGS"
     (restricted / 'dialog').unlink()
     installed = (install_dir / 'current').resolve()
     result = install({'PATH':str(restricted)}, success=False)
-    assert b'  - gzip' in result.stderr and b'  - dialog' in result.stderr
-    assert (b'brew install' if target_os == 'Darwin' else b'sudo apt install') in result.stderr and b'Installation complete' not in result.stdout
+    if target_os == 'Darwin':
+        assert b'  - gzip' in result.stderr and b'  - dialog' in result.stderr
+        assert b'brew install' in result.stderr
+    else:
+        assert b'Missing tools for launcher' in result.stderr or b'A terminal is required' in result.stderr
+    assert b'Installation complete' not in result.stdout
     assert (install_dir / 'current').resolve() == installed
     assert b'Downloading Mir.cpp' not in result.stdout
     (restricted / 'gzip').symlink_to(shutil.which('gzip'))

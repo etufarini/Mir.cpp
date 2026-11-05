@@ -41,9 +41,10 @@ select_folder() {
 paths_menu() {
     local action=llama choice initial previous candidate UI_TITLE=Folders
     while true; do
-        action=$(menu --default-item "$action" --menu "llama.cpp     $(compact_text "${LLAMA_CPP_PATH:-Not configured}")\nModels        $(compact_text "${MODELS_DIR:-Not configured}")\n\nChoose a folder. Valid changes are saved automatically." 17 80 3 \
-            llama 'llama.cpp folder' models 'Models folder' back Back) || return 0
+        action=$(menu --default-item "$action" --menu "llama.cpp     $(compact_text "${LLAMA_CPP_PATH:-Not configured}")\nModels        $(compact_text "${MODELS_DIR:-Not configured}")\n\nChoose a folder or install llama.cpp. Valid changes are saved automatically." 18 80 4 \
+            llama 'llama.cpp folder' models 'Models folder' setup 'Install / update llama.cpp' back Back) || return 0
         [[ "$action" != back ]] || return 0
+        if [[ "$action" == setup ]]; then build_menu; continue; fi
         if [[ "$action" == llama ]]; then initial="$LLAMA_CPP_PATH"; else initial="$MODELS_DIR"; fi
         choice=$(select_folder "$initial") || continue
         if [[ "$action" == llama ]]; then

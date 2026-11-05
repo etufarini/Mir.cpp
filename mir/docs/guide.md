@@ -21,6 +21,17 @@ To run from a source checkout, keep the `mir/` folder together and run
 
 Program files are installed in `~/.local/share/mir.cpp/`, or `$XDG_DATA_HOME/mir.cpp/` when set. The command remains `~/.local/bin/mir`.
 
+The curl installer offers to install missing launcher dependencies on Ubuntu/Debian. It uses `apt-get update` and installs the required packages, without a system-wide upgrade or package removals. Confirmation and sudo authentication use the terminal even when the script arrives through a pipe. Only package-manager commands run with elevated privileges; Mir.cpp and llama.cpp are installed and compiled as your user. Without a terminal, missing dependencies produce installation instructions and stop the installer. Declining or failing this step keeps the existing launcher installation.
+
+Launcher packages include Bash, curl, CA certificates, coreutils, findutils, grep, util-linux, tar, gzip, dialog, iproute2, procps and xdg-utils. To install them manually on Ubuntu/Debian:
+
+```bash
+sudo apt-get update
+sudo apt-get install bash curl ca-certificates coreutils findutils grep util-linux tar gzip dialog iproute2 procps xdg-utils
+```
+
+Other Linux distributions can use existing tools, but automatic package installation is limited to Ubuntu/Debian and compatible derivatives. The initial curl command itself needs curl, Bash and working HTTPS certificates already available. Python 3 remains optional for launcher model filtering; the build workflow installs it for release metadata parsing.
+
 Run the same curl installation command again to update or reinstall a clean copy of the program. Downloads are checked in a temporary folder before activation; failed downloads, missing files or invalid Bash syntax keep the previous installation active. After successful activation, old installer-managed copies and interrupted staging folders under `releases/` are removed. A cleanup permission error is reported as a warning while the new copy remains active. Missing or damaged wrappers carrying the Mir.cpp ownership marker are recreated. An unrelated existing `~/.local/bin/mir` command is never overwritten.
 
 Updates preserve model files, llama.cpp and saved settings. Settings use `~/.config/mir.cpp/` (or under `XDG_CONFIG_HOME`). On first launch, legacy settings are imported atomically when the Mir.cpp folder is absent. Originals and previous installations are preserved; existing Mir.cpp settings are never merged or overwritten. Import failures stop startup with a clear error so you can correct permissions and retry. Close the launcher before updating.
@@ -69,7 +80,7 @@ The main screen shows the current configuration and model, context and reasoning
 | Performance | Adjust device, CPU threads, GPU layers and prompt processing. |
 | Server & port | Choose the port, refresh its status, view process details or stop its listeners. |
 | Saved configurations | Load, save, update or delete named groups of settings. |
-| Folders | Choose and remember the llama.cpp and models folders. |
+| Folders | Install/update llama.cpp, restore a build, or select llama.cpp and models folders. |
 | Quit | Exit the launcher. |
 
 Menus remember the selected entry when you return from an option. Setting selectors highlight the current value when available and use specific screen titles. Each submenu puts its settings and actions before Back. Use **Back** or **Esc** to return from a submenu. Start with **Auto** context and reasoning in **Model settings**. In **Server & port**, the default port is `9931`.
@@ -85,7 +96,7 @@ The interface follows the Mir.cpp logo palette: a black background, light text, 
 
 ## Folder paths
 
-Open **Folders** to change **llama.cpp folder** or **Models folder**. The browser shows the current path, folder actions first and alphabetically sorted directories below. The Select button runs the highlighted action or opens the highlighted directory. Use **Up/Down** and **Enter** to open a folder; **Parent folder** goes up one level. Choose **Use this folder** to confirm the current folder. **Back** or **Esc** cancels without changing the saved path.
+Open **Folders** to change **llama.cpp folder**, **Models folder**, or open **Install / update llama.cpp**. For an existing build or models folder, the browser shows the current path, folder actions first and alphabetically sorted directories below. The Select button runs the highlighted action or opens the highlighted directory. Use **Up/Down** and **Enter** to open a folder; **Parent folder** goes up one level. Choose **Use this folder** to confirm the current folder. **Back** or **Esc** cancels without changing the saved path.
 
 Hidden folders are excluded initially; **Show hidden folders** reveals them, and **Hide hidden folders** hides them again. Use **Enter path** to paste or type a path, including a hidden folder. Spaces and `~/` are supported. Entering a path navigates there; choose **Use this folder** afterward to save it.
 
@@ -94,6 +105,26 @@ Select the main llama.cpp folder: it must contain executable `build/bin/llama-se
 Links to model files and to the selected root folder work; discovery does not descend through linked subfolders. When Python 3 is available, a bounded metadata reader omits recognized multimodal projectors, adapters and later parts of split models. Select the first part, keeping the other parts alongside it. Unknown formats and unreadable metadata stay listed so the installed llama.cpp can decide whether they work. Python is optional; without it, all discovered GGUF files are shown.
 
 Valid changes are saved automatically in `~/.config/mir.cpp/paths.conf` (or under `XDG_CONFIG_HOME`). These paths apply to all profiles and direct startup, separately from named model configurations. If a folder moves, reopen **Folders** to correct it. Missing paths or an empty model list do not close the menu; launching requires an executable server and an existing selected model.
+
+## Build and update llama.cpp
+
+Open **Folders → Install / update llama.cpp → Install / change build** and choose CPU, Vulkan or CUDA. Managed builds currently target Linux; on macOS, select an existing CPU/Metal build in Folders. CUDA integration still needs validation on NVIDIA hardware. External builds and other llama.cpp backends remain supported through folder selection and the existing device controls.
+
+![llama.cpp setup menu with install, update, restore and build log controls](screenshots/llama-setup.png)
+
+*The setup menu in a real 80×24 terminal, before selecting a managed build.*
+
+The setup installs missing build dependencies when you approve: Git, CMake, Make and C/C++ compilers, Python 3, util-linux, coreutils, and OpenSSL/curl development libraries. Vulkan adds `libvulkan-dev`, `glslc`, `spirv-headers`, `vulkan-tools` and Mesa Vulkan drivers on Ubuntu/Debian. CUDA uses an existing `nvcc`, otherwise it installs `cuda-toolkit` from an already configured NVIDIA repository when available, or the distribution's `nvidia-cuda-toolkit`. Package availability and compiler/toolkit compatibility vary by distribution version; configure the appropriate repositories if installation fails. The setup does not add third-party repositories, replace kernel GPU drivers or reboot your system. Follow the [official llama.cpp build instructions](https://github.com/ggml-org/llama.cpp/blob/master/docs/build.md) for platform requirements and the [NVIDIA installation guide](https://docs.nvidia.com/cuda/cuda-installation-guide-linux/) for CUDA/driver compatibility.
+
+When packages are missing, the menu temporarily gives way to a cleared terminal for the `y/N` confirmation, sudo password and installation output. Press **Enter** when finished, including after an error or cancellation, to return to the redrawn TUI. If all dependencies are already available, the menu continues without this extra step.
+
+Choose **Latest published release** or enter a **Specific release tag**. The latest choice includes published pre-releases, which are labeled as such upstream; it is not a promise of stability. Tags are resolved to a recorded commit. Mir.cpp clones only the requested upstream version and compiles it in a new directory. Modern versions use the Web UI archive published with that exact release, verified against its SHA-256 digest. Missing or mismatched assets block the build; there is no fallback to a newer UI. Older versions with bundled Web UI assets use those directly. Choose 1–64 parallel compiler jobs (default 2); higher values use more RAM and do not change inference thread settings. The build screen offers **View log** and **Cancel build**, with confirmation before cancellation. Escape also offers cancellation. A lock prevents simultaneous managed builds.
+
+Builds live under `${XDG_DATA_HOME:-$HOME/.local/share}/mir.cpp/llama.cpp/builds/`, separate from launcher releases. Each has its source, build tree and plain `mir-build.conf` metadata. Before selecting it, Mir.cpp checks the executable's version/help, device discovery and Web UI assets. GPU builds require an available accelerator. The optional `llama-fit-params` memory planner is built when supplied by upstream. Modern Web UI assets are downloaded before compilation; missing assets prevent activation. These checks do not prove that every GGUF model or context fits or works; actual loading remains llama.cpp's responsibility.
+
+**Check for updates** shows the latest published tag and asks before building with the selected managed backend. Updates keep the same backend; **Install / change build** changes it or selects a particular version. A successful build saves its path atomically for the TUI and direct startup. Model settings, saved profiles, browser preferences and external installations are preserved. Failed or canceled builds keep the previously selected path. **Restore previous build** selects the preceding managed build after confirmation, without needing network access or recompilation. Updates do not modify external source trees; select a Mir.cpp-managed build to use this workflow.
+
+**View build log** opens the latest attempt's log, kept at `llama.cpp/build.log` until the next attempt. Completed builds are retained for recovery and consume disk space; failed builds are removed. Keep builds referenced by saved paths or running sessions when cleaning disk space. Updating or removing Mir.cpp preserves llama.cpp builds and system dependency packages; dependencies are not automatically uninstalled. Use the same `XDG_DATA_HOME` to manage previously installed builds.
 
 ## Performance settings
 
@@ -204,7 +235,8 @@ For each setting, explicitly set `MIR_*` values take precedence over previous la
 
 - **The menu does not appear:** run the launcher inside a terminal and make sure `dialog` is installed. Enlarge the terminal if the menu does not fit.
 - **No models found:** choose the correct folder in **Folders → Models folder** and check for `.gguf` files in it or its subfolders.
-- **llama-server not found:** follow the [llama.cpp build guide](https://github.com/ggml-org/llama.cpp/blob/master/docs/build.md) and select its llama.cpp folder in **Folders**. For direct startup, configure it in the TUI first or set `MIR_LLAMA_CPP_DIR`.
+- **llama-server not found:** use **Folders → Install / update llama.cpp**, or select an existing compiled llama.cpp folder. For direct startup, configure it in the TUI first or set `MIR_LLAMA_CPP_DIR`.
+- **Build failed:** open **View build log**. Check network access, available disk/RAM, development packages and GPU drivers. Try fewer compiler jobs or a different published tag. The previous selected build remains active.
 - **The model fails to load:** open **View log**. Try a smaller context or a smaller model, and check that your llama.cpp version supports it.
 - **Vulkan device error:** check `vulkaninfo --summary`. Try **Auto** or **CPU only** under Performance settings. Devices shown there depend on the installed llama.cpp build. You can also run `~/Documenti/llama.cpp/build/bin/llama-server --list-devices` to see available devices.
 
@@ -222,9 +254,10 @@ For each setting, explicitly set `MIR_*` values take precedence over previous la
 | `lib/processes.sh` | Common status formatting, shutdown confirmations and PID identity checks. |
 | `lib/server.sh`, `memory.sh` | Model arguments, device discovery, lifecycle and optional memory planning. |
 | `lib/tui/`, `dialogrc` | Shared navigation, display and terminal geometry. |
+| `lib/build.sh` | Managed releases and adapter-based dependency handling. |
 | `lib/gguf.py` | Optional metadata-only filtering without reading weights. |
 
-Modules define functions without starting processes or probing tools on import. Both adapters expose the same services: `platform_required_tools`, `platform_dependency_hint`, `platform_browser_command`, `platform_open_url`, `platform_find_models`, `platform_move`, `platform_timeout`, `platform_memory_style`, `platform_memory_snapshot` and `platform_listeners`. Call services directly in the current shell when receiving state: listeners set `LISTENERS` and `PIDS`; memory snapshots set `RAM_AVAILABLE` in MiB, with an empty value for unknown and zero for measured zero. The `margins` style retains separate RAM/device pools; `shared` uses one approximate pool for all native allocations; `system` only permits forecasts without separate accelerator allocations. OS details stay in the adapter, while planning and pagination stay shared. Listener inspection failures return failure, unknown owners still block launch, and missing optional probes never prevent startup. Atomic moves take source, destination and either `replace` or `no-clobber`; callers never pass GNU-specific flags. `load_platform` accepts only `linux` or `macos` and rejects switching adapters in a running process.
+Modules define functions without starting processes or probing tools on import. Both adapters expose the same services: `platform_required_tools`, `platform_dependency_hint`, `platform_browser_command`, `platform_open_url`, `platform_find_models`, `platform_move`, `platform_timeout`, `platform_memory_style`, `platform_memory_snapshot` and `platform_listeners`. Managed builds also use `platform_build_backends`, `platform_build_flags`, `platform_start_worker`, `platform_build_probe` and `platform_ensure_dependencies`; shared menus never choose platform tools. Call services directly in the current shell when receiving state: listeners set `LISTENERS` and `PIDS`; memory snapshots set `RAM_AVAILABLE` in MiB, with an empty value for unknown and zero for measured zero. The `margins` style retains separate RAM/device pools; `shared` uses one approximate pool for all native allocations; `system` only permits forecasts without separate accelerator allocations. OS details stay in the adapter, while planning and pagination stay shared. Listener inspection failures return failure, unknown owners still block launch, and missing optional probes never prevent startup. Atomic moves take source, destination and either `replace` or `no-clobber`; callers never pass GNU-specific flags. `load_platform` accepts only `linux` or `macos` and rejects switching adapters in a running process.
 
 Shared code keeps configuration, profile serialization, generation, llama.cpp device discovery and arguments, TUI behavior and process safety independent of the OS. It must not call Homebrew, read `/proc`, parse native listener output or choose between OS command names. The terminal geometry correction stays shared because it concerns dialog behavior. There is no separate Metal model policy: devices still come from llama.cpp.
 
