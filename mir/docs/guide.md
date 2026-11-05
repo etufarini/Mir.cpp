@@ -21,14 +21,31 @@ Run the same curl installation command again to update or reinstall a clean copy
 
 Updates preserve model files, llama.cpp and saved settings. Settings use `~/.config/mir.cpp/` (or under `XDG_CONFIG_HOME`). On first launch, if this folder does not exist, settings are copied atomically from `sputnik.cpp`, or from the older `llama-launcher` folder when `sputnik.cpp` is absent. Originals are kept, and existing Mir.cpp settings are never merged or overwritten. Import failures stop startup with a clear error so you can correct permissions and retry. Later changes in Mir.cpp are saved separately from the old settings. Existing Sputnik.cpp installations and commands are kept. Close the launcher before updating.
 
-To remove the installed launcher and its downloaded releases:
+To remove the installed launcher and its downloaded releases, stop the server,
+close the launcher, then run:
 
 ```bash
-rm -- ~/.local/bin/mir
-rm -rf -- "${XDG_DATA_HOME:-$HOME/.local/share}/mir.cpp"
+mir --uninstall
 ```
 
-These commands keep your models, llama.cpp and saved settings. Concurrent installers are rejected with a clear message. The lock is released automatically when the installer exits, including after a forced interruption; the remaining `.install.flock` file does not block later installations. Legacy `.install.lock` directories are ignored. The installer uses `flock` from the `util-linux` package.
+Confirm with `y` or `yes`; Enter cancels. Without a terminal, use
+`mir --uninstall --yes`. If `mir` is not on your PATH, use
+`~/.local/bin/mir --uninstall`. Older installations need one update first to gain
+this command. Removal uses the paths recorded at installation, even if HOME or
+XDG variables have since changed. It keeps models, llama.cpp, saved settings,
+previous Sputnik.cpp installations, and unrelated files and symlinks outside
+installer-managed release directories. The command must still carry its Mir.cpp
+ownership marker and target this installation. Unrecognized or replaced files
+are refused. Removal does not stop a running launcher or server for you.
+
+Installation and removal share a lock; concurrent operations are rejected with
+a clear message. The lock is released automatically on exit, including after a
+forced interruption. The small `.install.flock` file and containing directories
+remain after removal so concurrent operations always use the same lock; they do
+not prevent reinstallation. Unrelated files are left in place. Legacy
+`.install.lock` directories are ignored. The installer and uninstaller use
+`flock` from the `util-linux` package. Permission failures are reported without
+sudo; correct the permissions and retry, or reinstall to repair a partial removal.
 
 ## Using the menu
 
@@ -200,7 +217,7 @@ For development, run these checks from the repository root:
 
 ```bash
 find mir -name '*.sh' -exec bash -n {} \;
-shellcheck -x -P SCRIPTDIR -P mir mir/mir.sh mir/sh/install.sh mir/tests/*.sh
+shellcheck -x -P SCRIPTDIR -P mir mir/mir.sh mir/sh/*.sh mir/tests/*.sh
 bash mir/tests/regression.sh
 bash mir/tests/installation.sh
 bash mir/tests/memory.sh
@@ -208,3 +225,9 @@ bash mir/tests/portability.sh
 ```
 
 ShellCheck follows the module imports from the entry point so it can check shared variables in context. The regression and installer checks additionally require Python 3, use temporary folders and simulated commands, and do not load real models or stop existing services. To compare direct startup and TUI flows with an earlier standalone launcher, pass its path to `bash mir/tests/regression.sh /path/to/old-launcher.sh`.
+
+For an optional network check, run `bash mir/tests/download.sh`. It executes the
+published README curl command twice in a temporary HOME, checking installation,
+update and saved settings with real GitHub downloads. It tests published `main`,
+which may differ from your checkout, and checks removal only when that version
+includes it. The local installer tests always check the checkout's removal code.
