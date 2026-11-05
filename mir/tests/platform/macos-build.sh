@@ -42,7 +42,7 @@ command() {
     if [[ $1 == -v ]]; then
         case "$2" in
             brew) [[ ${TEST_NO_BREW:-0} == 0 ]]; return $? ;;
-            cmake|python3|gtimeout)
+            cmake|python3|gtimeout|gmv|gfind|dialog|flock)
                 [[ ${TEST_MISSING:-0} == 0 || -f "$TEST_WORK/installed" ]]; return $? ;;
             git|make|cc|c++) return 0 ;;
         esac
@@ -75,7 +75,7 @@ platform_ensure_dependencies metal
     assert 'brew install cmake python coreutils' in result.stderr
     assert not (work / 'packages').exists()
     check('''capture() {
-    [[ $* == 'macos_install_build_packages cmake python coreutils' ]]
+    [[ $* == 'macos_install_packages cmake python coreutils' ]]
     touch "$TEST_WORK/installed"
 }
 platform_ensure_dependencies build capture
@@ -85,6 +85,19 @@ platform_ensure_dependencies build capture
 if platform_ensure_dependencies build refuse; then exit 1; fi
 [[ ! -e "$TEST_WORK/installed" ]]
 ''', {'TEST_MISSING':'1'})
+    check('''check_dependencies() { [[ $1 == install ]]; }
+TEST_SDK_FAIL=1 platform_install_dependencies
+capture() {
+    [[ $* == 'macos_install_packages coreutils findutils dialog flock' ]]
+    touch "$TEST_WORK/installed"
+}
+TEST_MISSING=1 platform_ensure_dependencies launcher capture
+''')
+    (work / 'installed').unlink()
+    check('''check_dependencies() { return 1; }
+if platform_install_dependencies; then exit 1; fi
+''')
+    print('PASS: launcher package mapping, SDK-independent setup and native dependency failures')
     print('PASS: CPU/Metal flags, SDK prerequisite, missing Homebrew/tools, grouped packages and dependency rollback')
 
     code = source + '''THEME_FILE="$MIR_ROOT/dialogrc"
@@ -141,7 +154,7 @@ exit "$result"
             clear = b'\x1b[0m\x1b[2J\x1b[H'
             first = output.index(clear)
             last = output.index(clear, first + len(clear))
-            assert output.index(b'Before build dependencies') < first < output.index(b'Missing build dependency packages')
+            assert output.index(b'Before build dependencies') < first < output.index(b'Missing dependency packages')
             assert output.index(b'Press Enter to return') < last < output.index(b'After build dependencies')
             if answer == 'y':
                 assert first < output.index(b'BREW_OUTPUT') < last

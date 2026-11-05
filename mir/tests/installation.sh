@@ -272,7 +272,7 @@ printf '%s\\0' "$@" > "$TEST_ARGS"
     installed = (install_dir / 'current').resolve()
     result = install({'PATH':str(restricted)}, success=False)
     if target_os == 'Darwin':
-        assert b'  - gzip' in result.stderr and b'  - dialog' in result.stderr
+        assert b'brew install dialog' in result.stderr
         assert b'brew install' in result.stderr
     else:
         assert b'Missing tools for launcher' in result.stderr or b'A terminal is required' in result.stderr

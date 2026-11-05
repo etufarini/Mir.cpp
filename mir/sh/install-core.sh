@@ -5,11 +5,11 @@ main() {
 
     fail() { printf 'Installation failed: %s\n' "$*" >&2; exit 1; }
     (( $# == 0 )) || fail 'This installer takes no arguments.'
-    configure_runtime
+    configure_runtime install
     if [[ "$RUNTIME_BASH" != "$BASH" ]]; then
         # Replace this process so interruption cannot leave a bootstrap parent
         # and a child installer holding the installation lock.
-        exec "$RUNTIME_BASH" -c "$(declare -f detect_platform configure_runtime bootstrap_macos macos_dependency_hint load_platform check_dependencies runtime_files main)"$'\nmain "$@"' mir-installer "$@"
+        exec "$RUNTIME_BASH" -c "$(declare -f detect_platform configure_runtime bootstrap_macos macos_dependency_hint macos_install_packages load_platform check_dependencies runtime_files main)"$'\nmain "$@"' mir-installer "$@"
     fi
     load_platform "$PLATFORM_ID"
     platform_install_dependencies || exit 1

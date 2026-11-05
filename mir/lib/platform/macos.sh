@@ -74,52 +74,42 @@ platform_listeners() {
     fi
 }
 
-platform_install_dependencies() { check_dependencies install; }
+platform_install_dependencies() { platform_ensure_dependencies launcher; }
 
 platform_ensure_dependencies() {
     local group=$1 index tool
-    local -a tools=(cmake python3 gtimeout) formulas=(cmake python coreutils) missing=()
+    local -a tools=() formulas=() missing=()
     case "$group" in
         metal) return 0 ;;
-        build) ;;
+        launcher) tools=(gmv gfind dialog flock); formulas=(coreutils findutils dialog flock) ;;
+        build) tools=(cmake python3 gtimeout); formulas=(cmake python coreutils) ;;
         *) printf 'Unknown dependency group: %s\n' "$group" >&2; return 1 ;;
     esac
-    if ! xcode-select -p >/dev/null 2>&1 || ! xcrun --find clang >/dev/null 2>&1 ||
-        ! xcrun --find clang++ >/dev/null 2>&1 || ! xcrun --sdk macosx --show-sdk-path >/dev/null 2>&1; then
-        printf 'Apple command line tools and a macOS SDK are required. Run xcode-select --install, finish installation, then retry.\n' >&2
-        return 1
+    if [[ "$group" == build ]]; then
+        if ! xcode-select -p >/dev/null 2>&1 || ! xcrun --find clang >/dev/null 2>&1 ||
+            ! xcrun --find clang++ >/dev/null 2>&1 || ! xcrun --sdk macosx --show-sdk-path >/dev/null 2>&1; then
+            printf 'Apple command line tools and a macOS SDK are required. Run xcode-select --install, finish installation, then retry.\n' >&2
+            return 1
+        fi
+        for tool in git make cc c++; do
+            command -v "$tool" >/dev/null || { printf 'Required developer tool not found: %s. Check your Apple command line tools installation.\n' "$tool" >&2; return 1; }
+        done
     fi
-    for tool in git make cc c++; do
-        command -v "$tool" >/dev/null || { printf 'Required developer tool not found: %s. Check your Apple command line tools installation.\n' "$tool" >&2; return 1; }
-    done
     for index in "${!tools[@]}"; do
         command -v "${tools[index]}" >/dev/null || missing+=("${formulas[index]}")
     done
-    (( ${#missing[@]} > 0 )) || return 0
-    command -v brew >/dev/null || { printf 'Homebrew is required. Install it, then run: brew install %s\n' "${missing[*]}" >&2; return 1; }
-    if [[ -n ${2:-} ]]; then
-        "$2" macos_install_build_packages "${missing[@]}" || return 1
-    else
-        macos_install_build_packages "${missing[@]}" || return 1
+    if (( ${#missing[@]} > 0 )); then
+        if [[ -n ${2:-} ]]; then
+            "$2" macos_install_packages "${missing[@]}" || return 1
+        else
+            macos_install_packages "${missing[@]}" || return 1
+        fi
+        for tool in "${tools[@]}"; do
+            command -v "$tool" >/dev/null || { printf 'Required command still unavailable after installation: %s\n' "$tool" >&2; return 1; }
+        done
     fi
-    for tool in "${tools[@]}"; do
-        command -v "$tool" >/dev/null || { printf 'Required command still unavailable after installation: %s\n' "$tool" >&2; return 1; }
-    done
-}
-
-macos_install_build_packages() {
-    local answer
-    printf 'Missing build dependency packages: %s\n' "$*" >&2
-    if [[ ! -r /dev/tty || ! -w /dev/tty ]] || ! { printf 'Install these packages with Homebrew? [y/N] ' > /dev/tty; } 2>/dev/null; then
-        printf 'A terminal is required to approve installation. Run: brew install %s\n' "$*" >&2
-        return 1
-    fi
-    IFS= read -r answer < /dev/tty || return 1
-    case "$answer" in y|Y|yes|YES) ;; *) printf 'Dependency installation canceled.\n' >&2; return 1 ;; esac
-    HOMEBREW_NO_AUTO_UPDATE=1 brew install --formula "$@" < /dev/tty || {
-        printf 'Homebrew installation failed. Check its output and retry; the previous llama.cpp build was kept.\n' >&2
-        return 1
-    }
+    if [[ "$group" == launcher ]]; then check_dependencies install || return 1; fi
+    return 0
 }
 
 platform_build_backends() { printf '%s\n' cpu CPU metal 'Metal (GPU)'; }

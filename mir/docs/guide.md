@@ -21,13 +21,19 @@ To run from a source checkout, keep the `mir/` folder together and run
 
 Program files are installed in `~/.local/share/mir.cpp/`, or `$XDG_DATA_HOME/mir.cpp/` when set. The command remains `~/.local/bin/mir`.
 
-The curl installer offers to install missing launcher dependencies on Ubuntu/Debian. It uses `apt-get update` and installs the required packages, without a system-wide upgrade or package removals. Confirmation and sudo authentication use the terminal even when the script arrives through a pipe. Only package-manager commands run with elevated privileges; Mir.cpp and llama.cpp are installed and compiled as your user. Without a terminal, missing dependencies produce installation instructions and stop the installer. Declining or failing this step keeps the existing launcher installation.
+The curl installer offers to install missing launcher dependencies on Ubuntu/Debian through apt and on macOS through Homebrew. On Ubuntu/Debian, it uses `apt-get update` and installs the required packages, without a system-wide upgrade or package removals. Confirmation and sudo authentication use the terminal even when the script arrives through a pipe. Only package-manager commands run with elevated privileges; Mir.cpp and llama.cpp are installed and compiled as your user. Without a terminal, missing dependencies produce installation instructions and stop the installer. Declining or failing this step keeps the existing launcher installation.
 
 Launcher packages include Bash, curl, CA certificates, coreutils, findutils, grep, util-linux, tar, gzip, dialog, iproute2, procps and xdg-utils. To install them manually on Ubuntu/Debian:
 
 ```bash
 sudo apt-get update
 sudo apt-get install bash curl ca-certificates coreutils findutils grep util-linux tar gzip dialog iproute2 procps xdg-utils
+```
+
+On macOS, install Homebrew separately. The installer starts with system Bash 3.2, offers compatible Bash if needed, then checks the launcher tools. Missing packages are offered with terminal confirmation: `bash`, `coreutils`, `findutils`, `dialog` and `flock`. Bash bootstrapping may require a separate confirmation before the remaining tools. No sudo or shell configuration changes are used. To install the launcher dependencies manually, or run from source without the installer:
+
+```bash
+brew install bash coreutils findutils dialog flock
 ```
 
 Other Linux distributions can use existing tools, but automatic package installation is limited to Ubuntu/Debian and compatible derivatives. The initial curl command itself needs curl, Bash and working HTTPS certificates already available. Python 3 remains optional for launcher model filtering; the build workflow installs it for release metadata parsing.
@@ -65,7 +71,7 @@ sudo; correct the permissions and retry, or reinstall to repair a partial remova
 
 On macOS, a Bash 3.2-compatible bootstrap finds Homebrew through `brew --prefix` or its standard Apple Silicon/Intel locations, then selects Bash 4.4 or newer before loading modules. It appends the Homebrew bin directory to PATH only inside the launcher/installer process and its children, preserving existing command precedence. It never edits shell configuration or changes the login shell.
 
-This works for source startup, `curl | bash` installation and the installed command, even when `/bin/bash` is selected first. The installed wrapper uses the compatible Bash interpreter selected by the installer. If Bash or another required dependency is missing, install the packages shown in the error and retry the same command. Homebrew itself remains a prerequisite on macOS; the launcher does not install it or other packages automatically.
+This works for source startup, `curl | bash` installation and the installed command, even when `/bin/bash` is selected first. The installed wrapper uses the compatible Bash interpreter selected by the installer. The installer offers missing dependencies after confirmation. Without a terminal, or if you decline, it stops before changing the existing Mir.cpp installation and prints manual instructions. Normal source and installed-command startup only check dependencies; they never install packages. Homebrew itself remains a prerequisite on macOS.
 
 ## Using the menu
 

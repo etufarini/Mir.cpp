@@ -32,7 +32,7 @@ emit_installer() {
             printf '    case "$1" in\n        linux)\n'
             emit_functions "$ROOT/lib/platform/linux.sh" 'platform_required_tools platform_browser_command platform_move platform_dependency_hint platform_install_dependencies platform_ensure_dependencies debian_package_manager install_dependency_packages'
             printf '            ;;\n        macos)\n'
-            emit_functions "$ROOT/lib/platform/macos.sh" 'platform_required_tools platform_browser_command platform_move platform_dependency_hint platform_install_dependencies'
+            emit_functions "$ROOT/lib/platform/macos.sh" 'platform_required_tools platform_browser_command platform_move platform_dependency_hint platform_install_dependencies platform_ensure_dependencies'
             printf '            ;;\n    esac\n'
         else printf '%s\n' "$line"; fi
     done < <(sed '1d' "$ROOT/lib/platform.sh")

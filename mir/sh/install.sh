@@ -4,12 +4,13 @@
 # shellcheck disable=SC2034 # RUNTIME_CANDIDATE is consumed by runtime.sh.
 bootstrap_macos() {
     local brew prefix
-    RUNTIME_CANDIDATE=''
+    RUNTIME_CANDIDATE=''; RUNTIME_BREW=''
     for brew in "$(command -v brew || true)" /opt/homebrew/bin/brew /usr/local/bin/brew; do
         [[ -n "$brew" && -x "$brew" ]] || continue
         prefix=$("$brew" --prefix 2>/dev/null) || continue
         [[ "$prefix" == /* && -d "$prefix/bin" && "$prefix" != *$'\n'* ]] || continue
         case ":$PATH:" in *":$prefix/bin:"*) ;; *) export PATH="$PATH:$prefix/bin" ;; esac
+        RUNTIME_BREW=$brew
         RUNTIME_CANDIDATE="$prefix/bin/bash"
         break
     done
@@ -17,6 +18,26 @@ bootstrap_macos() {
 
 macos_dependency_hint() {
     printf 'On macOS, install the launcher dependencies and retry:\n  brew install bash coreutils findutils dialog flock\n'
+}
+
+# Shared by the Bash 3.2 installer bootstrap and the modern build menus.
+macos_install_packages() {
+    local answer brew=${RUNTIME_BREW:-brew}
+    printf 'Missing dependency packages: %s\n' "$*" >&2
+    if ! command -v "$brew" >/dev/null; then
+        printf 'Homebrew is required. Install it, then run: brew install %s\n' "$*" >&2
+        return 1
+    fi
+    if [[ ! -r /dev/tty || ! -w /dev/tty ]] || ! { printf 'Install these packages with Homebrew? [y/N] ' > /dev/tty; } 2>/dev/null; then
+        printf 'A terminal is required to approve installation. Run: brew install %s\n' "$*" >&2
+        return 1
+    fi
+    IFS= read -r answer < /dev/tty || return 1
+    case "$answer" in y|Y|yes|YES) ;; *) printf 'Dependency installation canceled.\n' >&2; return 1 ;; esac
+    HOMEBREW_NO_AUTO_UPDATE=1 "$brew" install --formula "$@" < /dev/tty || {
+        printf 'Homebrew installation failed. Check its output and retry. The existing installation was kept.\n' >&2
+        return 1
+    }
 }
 # Bootstrap dispatch only; all code here must parse in Bash 3.2.
 detect_platform() {
@@ -47,6 +68,12 @@ configure_runtime() {
             return 0
         fi
     done
+    if [[ "$PLATFORM_ID" == macos && "${1:-}" == install ]]; then
+        macos_install_packages bash || return 1
+        # Retry discovery without installation permission to avoid prompt loops.
+        configure_runtime check
+        return $?
+    fi
     printf 'Mir.cpp requires Bash 4.4 or newer.\n' >&2
     if [[ "$PLATFORM_ID" == macos ]]; then macos_dependency_hint >&2; fi
     printf 'Install a compatible Bash and retry the same command. See README.md.\n' >&2
@@ -184,7 +211,42 @@ platform_move() {
     esac
 }
 platform_dependency_hint() { macos_dependency_hint; }
-platform_install_dependencies() { check_dependencies install; }
+platform_install_dependencies() { platform_ensure_dependencies launcher; }
+platform_ensure_dependencies() {
+    local group=$1 index tool
+    local -a tools=() formulas=() missing=()
+    case "$group" in
+        metal) return 0 ;;
+        launcher) tools=(gmv gfind dialog flock); formulas=(coreutils findutils dialog flock) ;;
+        build) tools=(cmake python3 gtimeout); formulas=(cmake python coreutils) ;;
+        *) printf 'Unknown dependency group: %s\n' "$group" >&2; return 1 ;;
+    esac
+    if [[ "$group" == build ]]; then
+        if ! xcode-select -p >/dev/null 2>&1 || ! xcrun --find clang >/dev/null 2>&1 ||
+            ! xcrun --find clang++ >/dev/null 2>&1 || ! xcrun --sdk macosx --show-sdk-path >/dev/null 2>&1; then
+            printf 'Apple command line tools and a macOS SDK are required. Run xcode-select --install, finish installation, then retry.\n' >&2
+            return 1
+        fi
+        for tool in git make cc c++; do
+            command -v "$tool" >/dev/null || { printf 'Required developer tool not found: %s. Check your Apple command line tools installation.\n' "$tool" >&2; return 1; }
+        done
+    fi
+    for index in "${!tools[@]}"; do
+        command -v "${tools[index]}" >/dev/null || missing+=("${formulas[index]}")
+    done
+    if (( ${#missing[@]} > 0 )); then
+        if [[ -n ${2:-} ]]; then
+            "$2" macos_install_packages "${missing[@]}" || return 1
+        else
+            macos_install_packages "${missing[@]}" || return 1
+        fi
+        for tool in "${tools[@]}"; do
+            command -v "$tool" >/dev/null || { printf 'Required command still unavailable after installation: %s\n' "$tool" >&2; return 1; }
+        done
+    fi
+    if [[ "$group" == launcher ]]; then check_dependencies install || return 1; fi
+    return 0
+}
             ;;
     esac
     PLATFORM_LOADED=$1
@@ -228,11 +290,11 @@ main() {
 
     fail() { printf 'Installation failed: %s\n' "$*" >&2; exit 1; }
     (( $# == 0 )) || fail 'This installer takes no arguments.'
-    configure_runtime
+    configure_runtime install
     if [[ "$RUNTIME_BASH" != "$BASH" ]]; then
         # Replace this process so interruption cannot leave a bootstrap parent
         # and a child installer holding the installation lock.
-        exec "$RUNTIME_BASH" -c "$(declare -f detect_platform configure_runtime bootstrap_macos macos_dependency_hint load_platform check_dependencies runtime_files main)"$'\nmain "$@"' mir-installer "$@"
+        exec "$RUNTIME_BASH" -c "$(declare -f detect_platform configure_runtime bootstrap_macos macos_dependency_hint macos_install_packages load_platform check_dependencies runtime_files main)"$'\nmain "$@"' mir-installer "$@"
     fi
     load_platform "$PLATFORM_ID"
     platform_install_dependencies || exit 1

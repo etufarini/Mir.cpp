@@ -28,6 +28,12 @@ configure_runtime() {
             return 0
         fi
     done
+    if [[ "$PLATFORM_ID" == macos && "${1:-}" == install ]]; then
+        macos_install_packages bash || return 1
+        # Retry discovery without installation permission to avoid prompt loops.
+        configure_runtime check
+        return $?
+    fi
     printf 'Mir.cpp requires Bash 4.4 or newer.\n' >&2
     if [[ "$PLATFORM_ID" == macos ]]; then macos_dependency_hint >&2; fi
     printf 'Install a compatible Bash and retry the same command. See README.md.\n' >&2

@@ -16,36 +16,21 @@ Named after the Mir space station.
 
 ## Requirements
 
-- Linux or macOS. Bash 4.4 or newer is required; macOS finds Homebrew Bash automatically.
-- A working [llama.cpp build](https://github.com/ggml-org/llama.cpp/blob/master/docs/build.md)
-  containing `build/bin/llama-server` or `bin/llama-server` (Homebrew layout).
-  Follow that guide for CPU or GPU setup.
-- At least one GGUF model supported by your llama.cpp version, with enough
-  memory for the model and selected context on your chosen CPU or GPU.
+- Linux or macOS, internet access and a terminal.
+- On Linux: Bash 4.4 or newer, curl and working HTTPS certificates to start
+  the installer. Ubuntu/Debian dependency installation is assisted; other
+  distributions require equivalent packages installed manually.
+- On macOS: [Homebrew](https://brew.sh/). The installer can start with the system
+  Bash and offers to install missing Bash and launcher dependencies.
+- At least one GGUF model supported by llama.cpp, with enough RAM or GPU memory.
+  Model downloads and GPU drivers are configured separately.
 
-Install the launcher dependencies on Ubuntu/Debian:
-
-```bash
-sudo apt update
-sudo apt install bash coreutils findutils grep util-linux curl ca-certificates \
-    tar gzip dialog iproute2 procps xdg-utils
-```
-
-On macOS, with [Homebrew](https://brew.sh/) installed:
-
-```bash
-brew install bash coreutils findutils dialog flock
-```
-
-Mir.cpp finds Homebrew Bash and tools automatically, even with the macOS system Bash.
-No shell or PATH configuration is needed for these dependencies.
-Linux uses `xdg-utils` to open the browser; macOS uses `open`.
-You can also open the address manually.
-On Ubuntu/Debian, the installer offers to install missing launcher dependencies.
-Build llama.cpp from **Folders → Install / update llama.cpp** on Linux or macOS.
-macOS build setup requires Apple command line tools and offers missing Homebrew
-packages. GPU drivers and model downloads remain separate; see the
-[llama.cpp build instructions](https://github.com/ggml-org/llama.cpp/blob/master/docs/build.md).
+The installer asks before installing missing dependencies using apt on
+Ubuntu/Debian or Homebrew on macOS. Only apt operations may require sudo.
+Install llama.cpp from **Folders → Install / update llama.cpp**, or select an
+existing build. macOS compilation also requires Apple's command line tools.
+See the [official llama.cpp build instructions](https://github.com/ggml-org/llama.cpp/blob/master/docs/build.md)
+for platform and GPU requirements.
 
 ## Quick install
 
@@ -54,7 +39,7 @@ curl -fsSL https://raw.githubusercontent.com/etufarini/Mir.cpp/main/mir/sh/insta
 ```
 
 Installs for your user in `~/.local/share/mir.cpp/` and creates
-`~/.local/bin/mir`. Only dependency installation uses sudo and may ask for your
+`~/.local/bin/mir`. Only Ubuntu/Debian dependency installation may ask for your sudo
 password. Run the same command again to update Mir.cpp.
 Close the launcher before updating.
 

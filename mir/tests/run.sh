@@ -2,7 +2,7 @@
 set -euo pipefail
 MIR_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 source "$MIR_ROOT/lib/runtime.sh"
-configure_runtime
+configure_runtime check
 if [[ "$RUNTIME_BASH" != "$BASH" ]]; then exec "$RUNTIME_BASH" "${BASH_SOURCE[0]}" "$@"; fi
 # Test subprocesses use the same compatible interpreter as this runner.
 export PATH="${BASH%/*}:$PATH"

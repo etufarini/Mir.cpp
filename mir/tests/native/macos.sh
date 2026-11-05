@@ -4,6 +4,13 @@ set -euo pipefail
 TEST_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 python3 - "$TEST_ROOT" <<'PY'
 import os
+import fcntl
+import pty
+import select
+import signal
+import struct
+import termios
+import time
 from pathlib import Path
 import shutil
 import subprocess
@@ -87,6 +94,86 @@ exit 1
     assert result.returncode == 7, result.stderr.decode()
     assert (work / 'args').read_bytes().endswith(b'--alias\0installed value\0')
     print('PASS: Bash 3.2 piped installer and installed command with system-only PATH')
+    # Run the real standalone Bash 3.2 bootstrap through a pipe and a controlling
+    # terminal. Only the isolated Homebrew command can create package fixtures.
+    for tool in ('dialog', 'flock'):
+        (prefix / 'bin' / tool).symlink_to(shutil.which(tool))
+    executable(commands / 'brew', '''#!/bin/sh
+if [ "$1" = --prefix ]; then printf '%s\\n' "$TEST_PREFIX"; exit; fi
+printf '%s\\n' "$*" >> "$TEST_PACKAGE_LOG"
+[ "${TEST_BREW_FAIL:-0}" = 0 ] || exit 1
+[ "${TEST_BREW_NOOP:-0}" = 0 ] || exit 0
+case "$*" in
+    'install --formula bash') ln -s "$TEST_REAL_BASH" "$TEST_PREFIX/bin/bash" ;;
+    'install --formula dialog') ln -s "$TEST_REAL_DIALOG" "$TEST_PREFIX/bin/dialog" ;;
+    *) exit 2 ;;
+esac
+''')
+    def bootstrap_install(answer, failure=0, noop=0, launcher=False):
+        (prefix / 'bin/bash').unlink(missing_ok=True)
+        if launcher:
+            (prefix / 'bin/dialog').unlink()
+        package_log = work / 'bootstrap-packages'
+        package_log.unlink(missing_ok=True)
+        isolated_home = work / ('bootstrap-' + answer + str(failure) + str(noop) + str(launcher))
+        master, slave = pty.openpty()
+        fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack('HHHH', 24, 80, 0, 0))
+        def session():
+            os.setsid()
+            fcntl.ioctl(0, termios.TIOCSCTTY, 0)
+        settings = env | {'HOME':str(isolated_home), 'TEST_INSTALLER':str(root / 'sh/install.sh'),
+                          'TEST_REAL_BASH':modern, 'TEST_REAL_DIALOG':shutil.which('dialog'), 'TEST_PACKAGE_LOG':str(package_log),
+                          'TEST_BREW_FAIL':str(failure), 'TEST_BREW_NOOP':str(noop)}
+        process = subprocess.Popen(['/bin/bash', '-c', '/bin/cat "$TEST_INSTALLER" | /bin/bash'],
+                                   stdin=slave, stdout=slave, stderr=slave,
+                                   env=settings, preexec_fn=session)
+        os.close(slave)
+        output = bytearray()
+        def pump():
+            if select.select([master], [], [], 0.05)[0]:
+                try:
+                    output.extend(os.read(master, 65536))
+                except OSError:
+                    pass
+        try:
+            deadline = time.monotonic() + 10
+            while b'[y/N]' not in output and process.poll() is None and time.monotonic() < deadline:
+                pump()
+            assert b'[y/N]' in output, output
+            os.write(master, answer.encode() + b'\n')
+            deadline = time.monotonic() + 20
+            prompts = 1
+            while process.poll() is None and time.monotonic() < deadline:
+                pump()
+                if launcher and output.count(b'[y/N]') > prompts:
+                    assert prompts == 1, output
+                    os.write(master, b'y\n')
+                    prompts += 1
+            assert process.poll() is not None, output
+            success = answer == 'y' and not failure and not noop
+            assert (process.returncode == 0) == success, output
+            installed_command = isolated_home / '.local/bin/mir'
+            assert installed_command.exists() == success, output
+            if answer != 'y':
+                assert not package_log.exists()
+            else:
+                assert package_log.read_text() == 'install --formula bash\n' + ('install --formula dialog\n' if launcher else '')
+            if success:
+                result = subprocess.run([str(installed_command), str(model)], env=settings,
+                                        capture_output=True, timeout=10)
+                assert result.returncode == 7, result.stderr
+            else:
+                assert not (isolated_home / '.local/share/mir.cpp').exists()
+        finally:
+            os.close(master)
+            if process.poll() is None:
+                os.killpg(process.pid, signal.SIGKILL)
+                process.wait(timeout=5)
+    for answer, failure, noop in [('n',0,0), ('y',1,0), ('y',0,1), ('y',0,0)]:
+        bootstrap_install(answer, failure, noop)
+    bootstrap_install('y', launcher=True)
+    print('PASS: missing launcher tool is installed after Bash bootstrap in the piped installer')
+    print('PASS: real Bash 3.2 piped installation with simulated Bash package, refusal/failure/no-op, interpreter replacement and installed startup')
     # Reject bad installer arguments before creating any installation directory.
     rejected_home = work / 'rejected'
     result = subprocess.run(['/bin/bash', '-s', '--', 'unsupported'],
