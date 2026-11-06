@@ -65,7 +65,7 @@ def role(path):
                 endian = ">"
             if struct.unpack(endian + "I", version)[0] not in (2, 3):
                 return "unknown"
-            number("Q")  # Tensor count; tensor data is never accessed.
+            number("Q")  # Tensor count.
             count = number("Q")
             if count > 100000:
                 return "unknown"

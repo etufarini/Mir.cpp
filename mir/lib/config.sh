@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Shared configuration is initialized explicitly; temporary variables stay local.
 
 fail() { printf '%s\n' "$*" >&2; exit 1; }
 
@@ -65,8 +64,7 @@ valid_generation_value() {
     esac
 }
 
-# Keep explicit empty values and copy data literally, without eval or exporting
-# aliases. Legacy LLAMA_* fallbacks retain their original empty-value behavior.
+# Preserve explicit empty MIR_* values; callers supply legacy LLAMA_* defaults.
 read_launcher_control() {
     local control="MIR_$2"
     if [[ -v "$control" ]]; then

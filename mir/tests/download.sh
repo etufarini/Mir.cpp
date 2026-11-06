@@ -43,7 +43,7 @@ with tempfile.TemporaryDirectory(prefix='mir-download-') as temporary:
         assert (config / 'profiles/Personal.conf').read_text() == 'personal profile\n'
         previous = active
         print(f'PASS: live curl | bash {action}, installed files and preserved settings', flush=True)
-    # Main may not yet contain the proposed removal feature when this test runs.
+    # The published installer may lag behind this checkout.
     if (active / 'sh/uninstall.sh').is_file():
         result = subprocess.run([str(command), '--uninstall', '--yes'], env=env, cwd='/',
                                 capture_output=True, timeout=10)

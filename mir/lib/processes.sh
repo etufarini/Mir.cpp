@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Port status and listener shutdown with confirmation and PID identity checks.
 
 check_port() {
     local pid

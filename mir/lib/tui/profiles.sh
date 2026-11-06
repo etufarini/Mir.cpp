@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Saved configuration actions; successful loading returns to the main menu.
 
 save_profile() {
     local name file result UI_TITLE='Save configuration'

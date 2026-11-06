@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Owns profile persistence and tracking; shares serialization for save and comparison.
 
 profile_data() {
     local key

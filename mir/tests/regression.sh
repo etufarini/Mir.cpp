@@ -164,7 +164,7 @@ sys.exit(status)
 
     # Source functions without running initialization, launching or installing traps.
     sources = 'MIR_ROOT=$1; source "$MIR_ROOT/tests/helpers/core.sh"; load_test_core fake\n'
-    # Compare all persisted controls and paths, not just the generated argv.
+    # Compare resolved controls and paths as well as launch arguments.
     control_values = {'LLAMA_CPP_DIR': str(server_dir), 'MODELS_DIR': str(models),
                       'CTX_SIZE': '8192', 'REASONING': 'on', 'PORT': '10002',
                       'DEVICE': 'none', 'THREADS': '3', 'GPU_LAYERS': '12',
@@ -364,7 +364,7 @@ MODEL=''
     assert not imported.exists() and (legacy / 'paths.conf').read_text() == paths_data
     assert not list(migration_base.glob('.mir-migration.*'))
     check_migration(migration_check)
-    # Existing Mir settings win even when the legacy source changes.
+    # Existing Mir.cpp settings win even when the legacy source changes.
     recent_profile = profile_data.replace(b'context=4096', b'context=8192')
     (legacy / 'profiles/Old.conf').write_bytes(recent_profile)
     check_migration(migration_check + '; [[ $CTX_SIZE == 4096 ]]')
