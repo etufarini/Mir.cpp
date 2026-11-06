@@ -111,8 +111,7 @@ UI_TITLE='Geometry check'
             assert process.poll() == 0, (process.poll(), captured[-2000:])
             print(f'PASS: centered {height}x{width} dialog at {shape}' + (f', recentered at {resized}' if resized else ''))
         finally:
-            # Drain while the widget runs; close the PTY before waiting on an
-            # interrupted child so Darwin cannot block on queued terminal output.
+            # Close the PTY before waiting so macOS cannot block on queued output.
             os.close(master)
             if process.poll() is None:
                 os.killpg(process.pid, signal.SIGKILL)

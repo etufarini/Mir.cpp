@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Dialog wrapper and presentation helpers; DIALOGRC affects only this launcher.
 
 ui() (
     # Let curses read the real terminal size and use our own positioning options.

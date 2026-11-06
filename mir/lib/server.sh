@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Launch arguments and lifecycle. Trap state stays global until process exit.
+# Trap state stays global until process exit.
 
 server_capabilities() {
     [[ "${CAPABILITIES_SERVER:-}" != "$SERVER" ]] || return 0
@@ -26,7 +26,7 @@ server_devices() {
 
 launch_error() { LAUNCH_ERROR=$*; return 1; }
 
-# Resolve only launcher-owned options; keep the original argument array intact.
+# Inspect endpoint and device overrides without changing forwarded arguments.
 resolve_endpoint() {
     local host=${SERVER_HOST:-${LLAMA_ARG_HOST:-127.0.0.1}} argument address line pattern count
     EFFECTIVE_DEVICE=${LLAMA_ARG_DEVICE:-auto}
@@ -47,9 +47,8 @@ resolve_endpoint() {
             --host=*) host=${argument#*=} ;;
             --device=*|-dev=*) EFFECTIVE_DEVICE=${argument#*=} ;;
             -*)
-                # A value such as --alias '--port' is data, not a port override.
-                # Infer value counts from native usage, leaving unknown switches
-                # untouched for the installed server to interpret.
+                # Infer value counts from native help so --alias '--port' stays
+                # data. Leave unknown switches for llama.cpp to interpret.
                 if [[ "$argument" =~ ^--?[a-zA-Z0-9_-]+$ ]]; then
                     pattern="(^|[[:space:],])$argument([,[:space:]]+--?[a-zA-Z0-9_-]+)*[[:space:]]([A-Z<\[{][^[:space:]]*)([[:space:]]([A-Z][^[:space:]]*))?"
                     while IFS= read -r line; do

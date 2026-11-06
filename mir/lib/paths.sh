@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Owns saved paths and model discovery; reads configuration files as data.
 
 # Source builds take precedence over package-manager layouts.
 server_path() {
@@ -11,8 +10,8 @@ server_path() {
     printf '%s/build/bin/llama-server' "$folder"
 }
 
-# Import legacy data once. Never source it, overwrite a new configuration, or
-# remove the original. Stage beside the destination for an atomic rename.
+# Stage a copy beside the destination for atomic activation, preserving the
+# original and any existing Mir.cpp settings. Imported files remain data.
 migrate_config() {
     local legacy="${CONFIG_DIR%/*}/llama-launcher" temporary
     if [[ -e "$CONFIG_DIR" || -L "$CONFIG_DIR" ]]; then return 0; fi

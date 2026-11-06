@@ -7,8 +7,7 @@ main() {
     (( $# == 0 )) || fail 'This installer takes no arguments.'
     configure_runtime install
     if [[ "$RUNTIME_BASH" != "$BASH" ]]; then
-        # Replace this process so interruption cannot leave a bootstrap parent
-        # and a child installer holding the installation lock.
+        # Replace the bootstrap process so interruption cannot orphan a lock holder.
         exec "$RUNTIME_BASH" -c "$(declare -f detect_platform configure_runtime bootstrap_macos macos_dependency_hint macos_install_packages load_platform check_dependencies runtime_files main)"$'\nmain "$@"' mir-installer "$@"
     fi
     load_platform "$PLATFORM_ID"
@@ -24,8 +23,8 @@ main() {
     COMMAND="$BIN_DIR/mir"
     MARKER='# Mir.cpp managed launcher'
     mkdir -p -- "$INSTALL_DIR"
-    # The lock file stays in place: removing it could let two installers lock
-    # different inodes. The kernel releases the lock when this process exits.
+    # Keep the lock inode so installers cannot lock different files at this path.
+    # The kernel releases the lock on exit.
     exec 9> "$INSTALL_DIR/.install.flock"
     flock -n 9 || fail 'Another Mir.cpp installation is running. Retry when it finishes.'
     NEW_COMMAND=true

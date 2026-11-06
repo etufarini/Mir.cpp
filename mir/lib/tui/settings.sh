@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Model and performance settings menus.
 
 generation_label() {
     case "$1" in

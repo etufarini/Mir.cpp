@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Folder browser and settings; navigation is saved only after confirmation.
 
 select_folder() {
     local current="${1:-$HOME}" choice candidate entry label selected=use show_hidden=false UI_TITLE='Browse folders'

@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Main navigation, port menu and running session display.
 
 configuration_summary() {
     local port_status=${PORT_STATUS%%$'\n'*}

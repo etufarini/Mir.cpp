@@ -74,8 +74,7 @@ memory_estimate() {
     elif [[ "$GPU_LAYERS" == auto && "$DEVICE" != none ]]; then
         return 0
     fi
-    # Explicit placement can still be measured when fitting reports insufficient
-    # memory. This is precisely where showing a negative margin is useful.
+    # Measure explicit placement even if fitting fails, so deficits remain visible.
     for ((i=0; i<${#words[@]}; i+=2)); do
         flag=${words[i]}; value=${words[i+1]}
         case "$flag" in
