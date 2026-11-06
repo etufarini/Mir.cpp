@@ -85,6 +85,50 @@ select_device() {
     fi
 }
 
+select_cache_type() {
+    local component=$1 current=$2 choice type types selected UI_TITLE="KV Cache: $1"
+    local -a primary=() other=()
+    [[ -x "$SERVER" && -f "$SERVER" ]] || { message 'Select a llama.cpp folder before choosing cache types.'; return 0; }
+    server_capabilities
+    types=$(cache_types "$component")
+    [[ -n "$types" ]] || { message 'Could not read supported cache types from llama-server help.\nCheck the selected build in Folders. Current values were kept.'; return 0; }
+    for type in q4_0 q8_0 f16; do
+        cache_type_supported "$type" "$types" || continue
+        case "$type" in
+            q4_0) primary+=("$type" 'Q4_0   Lower memory use (Mir.cpp default)') ;;
+            q8_0) primary+=("$type" 'Q8_0   Less aggressive quantization') ;;
+            f16) primary+=("$type" 'F16    Unquantized, higher memory use') ;;
+        esac
+    done
+    while IFS= read -r type; do
+        case "$type" in q4_0|q8_0|f16) ;; *) other+=("$type" "${type^^}") ;; esac
+    done <<< "$types"
+    if (( ${#other[@]} > 0 )); then primary+=(other 'Other formats'); fi
+    selected=$current
+    case "$current" in q4_0|q8_0|f16) ;; *) selected=other ;; esac
+    if choice=$(menu --default-item "$selected" --menu "Cache $component: current ${current^^}. Available types come from this build.\nLower precision saves memory and may affect quality.\nModel and backend compatibility is checked by llama.cpp." 18 80 5 "${primary[@]}" back Back); then
+        if [[ "$choice" == other ]]; then
+            choice=$(menu --default-item "$current" --menu "Other cache $component formats advertised by this llama-server.\nSupport during inference depends on the model and backend." 20 80 10 "${other[@]}" back Back) || return 0
+        fi
+        [[ "$choice" != back ]] || return 0
+        cache_type_supported "$choice" "$types" || return 0
+        printf -v "CACHE_TYPE_$component" '%s' "$choice"
+    fi
+}
+
+cache_menu() {
+    local action=k UI_TITLE='KV Cache'
+    while true; do
+        action=$(menu --default-item "$action" --menu 'K stores keys; V stores values. Both default to Q4_0.\nQuantized V requires Flash Attention. Mixed types may be unsupported\nor slower; use matching types when unsure.' 17 80 3 \
+            k "K (keys)       ${CACHE_TYPE_K^^}" v "V (values)     ${CACHE_TYPE_V^^}" back Back) || return 0
+        case "$action" in
+            k) select_cache_type K "$CACHE_TYPE_K" ;;
+            v) select_cache_type V "$CACHE_TYPE_V" ;;
+            back) return 0 ;;
+        esac
+    done
+}
+
 performance_menu() {
     local action=device choice layers_label UI_TITLE=Performance
     while true; do
@@ -116,8 +160,9 @@ performance_menu() {
 model_menu() {
     local action=model choice selected i UI_TITLE='Model settings'
     while true; do
-        action=$(menu --default-item "$action" --menu 'Context includes input and output. Larger contexts need more memory.\nContext size depends on model support.' 18 80 4 \
+        action=$(menu --default-item "$action" --menu 'Context includes input and output. Larger contexts need more memory.\nContext size and cache types depend on model and backend support.' 18 80 5 \
             model "Model         $(compact_text "${MODEL##*/}")" context "Context       $(context_label)" \
+            cache "KV Cache      K ${CACHE_TYPE_K^^} / V ${CACHE_TYPE_V^^}" \
             generation "Generation    $(display_value "$(generation_preset)")" back Back) || return 0
         case "$action" in
             model)
@@ -139,6 +184,7 @@ model_menu() {
                         fi
                     else CTX_SIZE=$choice; fi
                 fi ;;
+            cache) cache_menu ;;
             generation) generation_menu ;;
             back) return 0 ;;
         esac

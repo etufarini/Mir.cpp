@@ -47,7 +47,7 @@ with tempfile.TemporaryDirectory(prefix='mir-bootstrap-') as temporary:
     model.touch()
     server_dir = work / 'llama package'
     executable(server_dir / 'bin/llama-server', '''#!/bin/sh
-if [ "$1" = --help ]; then echo '--model --port'; exit 0; fi
+if [ "$1" = --help ]; then echo '--model --port --cache-type-k --cache-type-v'; exit 0; fi
 printf '%s\\0' "$@" > "$TEST_ARGS"
 exit 7
 ''')
@@ -58,7 +58,8 @@ exit 7
                             env=env, cwd='/', capture_output=True, text=True, timeout=15)
     assert result.returncode == 7, result.stderr
     args = (work / 'args').read_bytes().split(b'\0')[:-1]
-    assert args == [b'--model', str(model).encode(), b'--port', b'9931', b'--alias', b'literal $(data); words']
+    assert args == [b'--model', str(model).encode(), b'--cache-type-k', b'q4_0',
+                    b'--cache-type-v', b'q4_0', b'--port', b'9931', b'--alias', b'literal $(data); words']
     print('PASS: Bash 3.2 source launch, custom Homebrew prefix, literal arguments and server exit status')
 
     (prefix / 'bin/bash').unlink()

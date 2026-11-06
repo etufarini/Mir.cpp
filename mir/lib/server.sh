@@ -12,6 +12,37 @@ supports_option() {
     [[ "$SERVER_HELP" =~ $pattern ]]
 }
 
+# Read only the selected option's value list, including wrapped help output.
+cache_types() {
+    local option="--cache-type-${1,,}" help=${2-$SERVER_HELP} line word active=false values=false
+    local pattern="(^|[[:space:],])$option([[:space:]=,]|$)"
+    local -a words
+    while IFS= read -r line; do
+        if [[ "$line" =~ ^[[:space:]]*- ]]; then
+            if [[ "$line" =~ $pattern ]]; then active=true;
+            elif "$active"; then break; fi
+        fi
+        "$active" || continue
+        if [[ "$line" == *'allowed values:'* ]]; then
+            line=${line#*allowed values:}
+            values=true
+        elif ! "$values"; then continue; fi
+        read -r -a words <<< "${line//,/ }"
+        for word in "${words[@]}"; do
+            valid_cache_type "$word" || return 0
+            printf '%s\n' "$word"
+        done
+    done <<< "$help"
+}
+
+cache_type_supported() {
+    local type
+    while IFS= read -r type; do
+        [[ "$type" != "$1" ]] || return 0
+    done <<< "$2"
+    return 1
+}
+
 server_devices() {
     local line
     DEVICE_NAMES=(); DEVICE_DESCRIPTIONS=()
@@ -26,26 +57,32 @@ server_devices() {
 
 launch_error() { LAUNCH_ERROR=$*; return 1; }
 
-# Inspect endpoint and device overrides without changing forwarded arguments.
+# Inspect effective controls without changing forwarded arguments or values.
 resolve_endpoint() {
     local host=${SERVER_HOST:-${LLAMA_ARG_HOST:-127.0.0.1}} argument address line pattern count
     EFFECTIVE_DEVICE=${LLAMA_ARG_DEVICE:-auto}
+    EFFECTIVE_CACHE_TYPE_K=$CACHE_TYPE_K
+    EFFECTIVE_CACHE_TYPE_V=$CACHE_TYPE_V
     CURL_ARGS=(--noproxy '*' --globoff)
     UNIX_SOCKET=''
     while (( $# )); do
         argument=$1
         case "$argument" in
-            --port|--host|--device|-dev)
+            --port|--host|--device|-dev|--cache-type-k|-ctk|--cache-type-v|-ctv)
                 (( $# >= 2 )) || { launch_error "Missing value for $argument."; return 1; }
                 case "$argument" in
                     --port) PORT=$2 ;;
                     --host) host=$2 ;;
+                    --cache-type-k|-ctk) EFFECTIVE_CACHE_TYPE_K=$2 ;;
+                    --cache-type-v|-ctv) EFFECTIVE_CACHE_TYPE_V=$2 ;;
                     *) EFFECTIVE_DEVICE=$2 ;;
                 esac
                 shift ;;
             --port=*) PORT=${argument#*=} ;;
             --host=*) host=${argument#*=} ;;
             --device=*|-dev=*) EFFECTIVE_DEVICE=${argument#*=} ;;
+            --cache-type-k=*|-ctk=*) EFFECTIVE_CACHE_TYPE_K=${argument#*=} ;;
+            --cache-type-v=*|-ctv=*) EFFECTIVE_CACHE_TYPE_V=${argument#*=} ;;
             -*)
                 # Infer value counts from native help so --alias '--port' stays
                 # data. Leave unknown switches for llama.cpp to interpret.
@@ -97,7 +134,7 @@ resolve_endpoint() {
 }
 
 prepare_server() {
-    local key flag name found
+    local key flag name found types value
     LAUNCH_ERROR=''
     [[ -f "$SERVER" && -x "$SERVER" ]] || { launch_error 'llama-server not found. Set the llama.cpp folder in Folders, or use MIR_LLAMA_CPP_DIR.'; return 1; }
     [[ -z "$PATHS_WARNING" || "$TUI" == true ]] || printf '%s\n' "$PATHS_WARNING" >&2
@@ -117,6 +154,10 @@ prepare_server() {
         for flag in "${ARGS[@]}"; do
             [[ "$flag" == --* ]] || continue
             if ! supports_option "$flag"; then
+                if [[ "$flag" == --cache-type-* ]]; then
+                    launch_error "This llama-server does not advertise $flag. Select a llama.cpp build supporting KV cache types in Folders."
+                    return 1
+                fi
                 launch_error "This llama-server does not advertise $flag. Use Auto/Default for that setting or a build supporting it."
                 return 1
             fi
@@ -126,6 +167,16 @@ prepare_server() {
     fi
     ARGS+=("$@")
     resolve_endpoint "${ARGS[@]}" || return 1
+    for key in K V; do
+        name="EFFECTIVE_CACHE_TYPE_$key"
+        value=${!name}
+        valid_cache_type "$value" || { launch_error "Invalid KV cache $key type: $value."; return 1; }
+        types=$(cache_types "$key")
+        if [[ -n "$types" ]] && ! cache_type_supported "$value" "$types"; then
+            launch_error "KV cache $key type '$value' is not advertised by this llama-server. Choose a supported type under Model settings > KV Cache."
+            return 1
+        fi
+    done
     if [[ "$EFFECTIVE_DEVICE" != auto && "$EFFECTIVE_DEVICE" != none ]] && server_devices && [[ "$DEVICE_OUTPUT" == *'Available devices:'* ]]; then
         local -a selected_devices
         IFS=, read -r -a selected_devices <<< "$EFFECTIVE_DEVICE"
@@ -145,7 +196,7 @@ prepare_server() {
 }
 
 build_model_args() {
-    MODEL_ARGS=(--model "$MODEL")
+    MODEL_ARGS=(--model "$MODEL" --cache-type-k "$CACHE_TYPE_K" --cache-type-v "$CACHE_TYPE_V")
     # Omit automatic settings so llama.cpp can adapt to the available hardware.
     if [[ "$CTX_SIZE" != auto ]]; then MODEL_ARGS+=(--ctx-size "$CTX_SIZE"); fi
     if [[ "$THREADS" != auto ]]; then MODEL_ARGS+=(--threads "$THREADS"); fi
@@ -179,6 +230,7 @@ run_server() {
         "$SERVER" "${ARGS[@]}" >"$LOG_FILE" 2>&1 &
     else
         printf 'Model: %s\nContext: %s\nWeb UI: %s\n' "$MODEL" "$(context_label)" "$URL"
+        printf 'KV cache: K %s | V %s\n' "$EFFECTIVE_CACHE_TYPE_K" "$EFFECTIVE_CACHE_TYPE_V"
         printf 'Device: %s | CPU threads: %s | GPU layers: %s | Prompt processing: %s\nStop with Ctrl+C.\n' \
             "$DEVICE" "$THREADS" "$GPU_LAYERS" "$PROMPT_PROCESSING"
         "$SERVER" "${ARGS[@]}" &

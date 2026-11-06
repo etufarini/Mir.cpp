@@ -46,6 +46,10 @@ with tempfile.TemporaryDirectory(prefix='mir-portability-') as temporary:
 --gpu-layers N       layers, auto or all
 --batch-size N       batch
 --ubatch-size N      ubatch
+-ctk, --cache-type-k TYPE  KV cache data type for K
+    allowed values: f32, f16, bf16, q8_0, q4_0, q4_1, iq4_nl, q5_0, q5_1
+-ctv, --cache-type-v TYPE  KV cache data type for V
+    allowed values: f32, f16, bf16, q8_0, q4_0, q4_1, iq4_nl, q5_0, q5_1
 --alias STRING       alias
 --lora-scaled FNAME SCALE   adapter
 --no-webui           Disable the Web UI
@@ -131,6 +135,77 @@ if valid_device "$DEVICE"; then exit 1; fi
     check('initialize_config "$2"; model_menu; [[ $CTX_SIZE == auto ]]')
     print('PASS: automatic/custom context, native environment, bounded validation, multi-device profiles and canceled edits')
 
+    # The installed build's help is the authority; never reuse draft-cache lists.
+    check(r'''initialize_config "$2"
+server_capabilities
+expected=$'f32\nf16\nbf16\nq8_0\nq4_0\nq4_1\niq4_nl\nq5_0\nq5_1'
+[[ $(cache_types K) == "$expected" && $(cache_types V) == "$expected" ]]
+help=$'--cache-type-k TYPE\n  allowed values: f16, q4_0,\n                  custom_type\n  (default: f16)\n--cache-type-v TYPE\n  allowed values: f16\n--cache-type-k-draft TYPE\n  allowed values: draft_only'
+[[ $(cache_types K "$help") == $'f16\nq4_0\ncustom_type' ]]
+[[ $(cache_types V "$help") == f16 ]]
+[[ -z $(cache_types K $'--cache-type-k-draft TYPE\nallowed values: draft_only') ]]
+''')
+    for kind in ['f32', 'f16', 'bf16', 'q8_0', 'q4_0', 'q4_1', 'iq4_nl', 'q5_0', 'q5_1']:
+        result, args = launch({'MIR_CACHE_TYPE_K':kind, 'MIR_CACHE_TYPE_V':kind})
+        assert result.returncode == 0, (kind, result.stderr)
+        assert args[args.index('--cache-type-k')+1] == kind
+        assert args[args.index('--cache-type-v')+1] == kind
+    result, args = launch()
+    assert args[args.index('--cache-type-k')+1] == 'q4_0'
+    assert args[args.index('--cache-type-v')+1] == 'q4_0'
+    result, args = launch({'LLAMA_ARG_CACHE_TYPE_K':'q8_0', 'LLAMA_ARG_CACHE_TYPE_V':'f16'})
+    assert result.returncode == 0 and 'KV cache: K q8_0 | V f16' in result.stdout
+    result, args = launch({'LLAMA_ARG_CACHE_TYPE_K':'q8_0', 'MIR_CACHE_TYPE_K':'q4_0'})
+    assert result.returncode == 0 and 'KV cache: K q4_0 | V q4_0' in result.stdout
+    for key in ['K', 'V']:
+        for value in ['', 'Q4_0', 'q4_0 q8_0', '$(touch executed)', '--port']:
+            result, args = launch({'MIR_CACHE_TYPE_'+key:value})
+            assert result.returncode != 0 and not args, (key, value)
+        result, args = launch({'MIR_CACHE_TYPE_'+key:'unavailable'})
+        assert result.returncode != 0 and not args and 'not advertised' in result.stderr
+    for arguments in [['-ctk','q8_0','-ctv','f16'], ['--cache-type-k=q8_0','--cache-type-v=f16']]:
+        result, args = launch({'MIR_CACHE_TYPE_K':'unavailable'}, arguments)
+        assert result.returncode == 0 and 'KV cache: K q8_0 | V f16' in result.stdout, result.stderr
+    result, args = launch(arguments=['--alias','--cache-type-v'])
+    assert result.returncode == 0 and 'KV cache: K q4_0 | V q4_0' in result.stdout
+    for arguments in [['-ctk'], ['--cache-type-v'], ['--cache-type-k','unavailable']]:
+        result, args = launch(arguments=arguments)
+        assert result.returncode != 0 and not args
+    result, args = launch({'TEST_HELP':'--model FNAME\n--port PORT'})
+    assert result.returncode != 0 and 'does not advertise --cache-type-k' in result.stderr
+    print('PASS: all advertised cache types, wrapped/draft help isolation, defaults, native/MIR/CLI priority and unsupported controls')
+
+    (work / 'queue').write_text(json.dumps([[0,'k'],[0,'q8_0'],[0,'v'],[0,'other'],[0,'q5_1'],[0,'back']]))
+    check('initialize_config "$2"; cache_menu; [[ $CACHE_TYPE_K == q8_0 && $CACHE_TYPE_V == q5_1 ]]')
+    (work / 'queue').write_text(json.dumps([[0,'k'],[255,''],[0,'v'],[0,'other'],[0,'back'],[0,'back']]))
+    check('initialize_config "$2"; cache_menu; [[ $CACHE_TYPE_K == q4_0 && $CACHE_TYPE_V == q4_0 ]]')
+    check(r'''initialize_config "$2"
+CACHE_TYPE_K=q8_0 CACHE_TYPE_V=q5_1
+write_profile "$PROFILES_DIR/Cache.conf"
+saved=$(profile_data)
+CACHE_TYPE_K=f16
+[[ $(profile_status) == 'Cache (Modified)' ]]
+load_profile "$PROFILES_DIR/Cache.conf"
+[[ $(profile_data) == "$saved" && $(profile_status) == Cache ]]
+CACHE_TYPE_V=q4_0
+[[ $(profile_status) == 'Cache (Modified)' ]]
+CACHE_TYPE_V=q5_1
+set_generation_preset focused
+[[ $CACHE_TYPE_K == q8_0 && $CACHE_TYPE_V == q5_1 ]]
+load_profile "$PROFILES_DIR/Cache.conf"
+for field in cache_type_k cache_type_v; do
+    sed "s/^$field=.*/$field=invalid value/" "$CURRENT_PROFILE" > "$PROFILES_DIR/Bad.conf"
+    if load_profile "$PROFILES_DIR/Bad.conf"; then exit 1; fi
+    [[ $(profile_data) == "$saved" && $(profile_status) == Cache ]]
+done
+message() { :; }
+platform_timeout() { return 1; }
+CAPABILITIES_SERVER=''
+select_cache_type K "$CACHE_TYPE_K"
+[[ $(profile_data) == "$saved" && $(profile_status) == Cache ]]
+''')
+    print('PASS: primary/other cache menus, separate K/V edits, cancellation, probe failure, profile round trips and rollback')
+
     for host, address in [('::1','[::1]'), ('::','[::1]'), ('0.0.0.0','127.0.0.1'),
                           ('127.0.0.2','127.0.0.2'), ('::1,127.0.0.1','[::1]')]:
         result, _ = launch({'MIR_HOST':host})
@@ -160,9 +235,10 @@ prepare_server --host /tmp/mir-test.sock
 ''')
     print('PASS: effective host/port, IPv6, wildcard and native binds, occupied overrides, argument values and Unix socket health')
 
-    result, _ = launch({'TEST_HELP':'--model FNAME\n--port PORT', 'MIR_THREADS':'4'})
+    minimal_help = '--model FNAME\n--port PORT\n--cache-type-k TYPE\n--cache-type-v TYPE'
+    result, _ = launch({'TEST_HELP':minimal_help, 'MIR_THREADS':'4'})
     assert result.returncode != 0 and 'does not advertise --threads' in result.stderr
-    result, _ = launch({'TEST_HELP':'--model FNAME\n--port PORT'})
+    result, _ = launch({'TEST_HELP':minimal_help})
     assert result.returncode == 0, result.stderr
     result, _ = launch({'TEST_HELP_EXIT':'1'})
     assert result.returncode == 0 and 'Could not inspect' in result.stderr
@@ -270,7 +346,7 @@ scan_models
     master, slave = pty.openpty()
     process = subprocess.Popen(['bash', str(root / 'mir.sh')],
                                env=env | {'TEST_LIVE':'1', 'MIR_THREADS':'4',
-                                          'TEST_HELP':'--model FNAME\n--port PORT'},
+                                          'TEST_HELP':minimal_help},
                                stdin=slave, stdout=slave, stderr=slave)
     os.close(slave)
     try:
