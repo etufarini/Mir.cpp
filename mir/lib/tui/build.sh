@@ -123,7 +123,7 @@ confirm_build() {
     local tag=$1 backend=$2 jobs UI_TITLE='Build llama.cpp'
     valid_build_tag "$tag" || { message 'Invalid release tag. Use letters, digits, dots, underscores or hyphens; start with a letter or digit.'; return 0; }
     jobs=$(ui --cancel-label Back --inputbox 'Parallel compiler jobs (1-64). More jobs use more RAM.\nThis does not change inference CPU threads.' 10 78 2) || return 0
-    [[ "$jobs" =~ ^([1-9]|[1-5][0-9]|6[0-4])$ ]] || { message 'Enter an integer between 1 and 64.'; return 0; }
+    valid_build_jobs "$jobs" || { message 'Enter an integer between 1 and 64.'; return 0; }
     ui --yesno "Download and compile llama.cpp $tag ($backend)?\n\nInstallation: $(compact_text "$(build_root)")\nCompiler jobs: $jobs\n\nThe path is saved after verification. Existing external builds are kept." 15 80 || return 0
     install_build "$tag" "$backend" "$jobs" || true
 }

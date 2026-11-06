@@ -6,6 +6,10 @@ fail() { printf '%s\n' "$*" >&2; exit 1; }
 
 valid_count() { [[ "$1" =~ ^(0|[1-9][0-9]{0,9})$ ]] && (( $1 <= 2147483647 )); }
 
+valid_decimal() {
+    [[ "$1" =~ ^(0|[1-9][0-9]{0,9})(\.[0-9]{1,9})?$ ]] && valid_count "${1%%.*}"
+}
+
 valid_threads() { [[ "$1" == auto ]] || { valid_count "$1" && [[ "$1" != 0 ]]; }; }
 
 valid_context() { [[ "$1" == auto ]] || valid_count "$1"; }
@@ -25,8 +29,7 @@ valid_gpu_list() {
     IFS=, read -r -a values <<< "$2"
     for value in "${values[@]}"; do
         if [[ "$kind" == ratios ]]; then
-            [[ "$value" =~ ^(0|[1-9][0-9]{0,9})(\.[0-9]{1,9})?$ ]] || return 1
-            valid_count "${value%%.*}" || return 1
+            valid_decimal "$value" || return 1
             if [[ ! "$value" =~ ^0(\.0+)?$ ]]; then nonzero=true; fi
         else
             valid_count "$value" || return 1
@@ -76,8 +79,7 @@ valid_generation_value() {
         top_k) valid_count "$value"; return ;;
     esac
     # Reject expressions, infinities and excessive precision before arithmetic.
-    [[ "$value" =~ ^-?(0|[1-9][0-9]{0,9})(\.[0-9]{1,9})?$ ]] || return 1
-    valid_count "${magnitude%%.*}" || return 1
+    valid_decimal "$magnitude" || return 1
     case "$key" in
         top_p|min_p) [[ "$value" != -* && ( "$value" == 0 || "$value" == 0.* || "$value" =~ ^1(\.0+)?$ ) ]] ;;
         temperature) [[ "$value" != -* ]] ;;

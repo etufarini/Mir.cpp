@@ -5,6 +5,8 @@ build_root() { printf '%s/mir.cpp/llama.cpp' "${XDG_DATA_HOME:-$HOME/.local/shar
 
 valid_build_tag() { [[ "$1" =~ ^[a-zA-Z0-9][a-zA-Z0-9._-]{0,79}$ ]]; }
 
+valid_build_jobs() { [[ "$1" =~ ^([1-9]|[1-5][0-9]|6[0-4])$ ]]; }
+
 read_build() {
     local path=$1 line key root
     local -A fields=()
@@ -109,7 +111,7 @@ build_release() {
         -DGGML_CUDA=OFF -DGGML_VULKAN=OFF)
     # CMake UI packaging must see one physical path, including through /tmp links.
     stage=$(cd -- "$stage" && pwd -P) || return 1
-    valid_build_tag "$tag" && [[ "$jobs" =~ ^([1-9]|[1-5][0-9]|6[0-4])$ ]] || return 1
+    valid_build_tag "$tag" && valid_build_jobs "$jobs" || return 1
     platform_build_flags "$backend" || return 1
     flags+=("${BUILD_FLAGS[@]}")
     printf 'Downloading llama.cpp %s (%s)...\n' "$tag" "$backend"

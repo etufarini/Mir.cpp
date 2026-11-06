@@ -150,15 +150,24 @@ sys.exit(status)
     assert args[args.index('--temperature')+1] == '0.75' and args[-2:] == ['--temperature','0.9']
     assert args[args.index('--seed')+1] == '4294967295' and args[args.index('--n-predict')+1] == '1024'
     for key, value in [('TEMPERATURE',''), ('TEMPERATURE','-0.1'), ('TEMPERATURE','nan'),
+                       ('TEMPERATURE','01.5'), ('TEMPERATURE','1.1234567890'),
                        ('TOP_P','1.01'), ('MIN_P','-0.1'), ('TOP_K','1.5'), ('TOP_K','2147483648'),
                        ('REPEAT_PENALTY','0'), ('PRESENCE_PENALTY','$(touch bad)'),
+                       ('PRESENCE_PENALTY','--1'), ('PRESENCE_PENALTY','-2147483648'),
+                       ('FREQUENCY_PENALTY','-0.1234567890'),
                        ('SEED','4294967296'), ('MAX_TOKENS','-2'), ('GENERATION_PRESET','unknown')]:
         result = run(root / 'mir.sh', {'MIR_'+key:value})
         assert result[0] == 1 and result[3] is None and result[2], (key,value,result)
     for key, value in [('TEMPERATURE','0'), ('TOP_P','1.000'), ('MIN_P','0'), ('TOP_K','0'),
+                       ('TEMPERATURE','2147483647.999999999'),
                        ('REPEAT_PENALTY','0.01'), ('PRESENCE_PENALTY','-0.5'), ('FREQUENCY_PENALTY','0.2'),
+                       ('PRESENCE_PENALTY','-2147483647.999999999'), ('FREQUENCY_PENALTY','-0'),
                        ('SEED','-1'), ('MAX_TOKENS','-1'), ('MAX_TOKENS','0')]:
-        assert run(root / 'mir.sh', {'MIR_'+key:value})[0] == 0, (key,value)
+        result = run(root / 'mir.sh', {'MIR_'+key:value})
+        assert result[0] == 0, (key,value,result)
+        args = result[3].decode().split('\0')[:-1]
+        flag = '--n-predict' if key == 'MAX_TOKENS' else '--' + key.lower().replace('_','-')
+        assert args[args.index(flag)+1] == value, (key,value,args)
     assert run(root / 'mir.sh', {'LLAMA_GENERATION_PRESET':'min-p', 'LLAMA_TEMPERATURE':'0.7'})[0] == 0
     print('PASS: generation presets, default omission, numeric validation, aliases and pass-through precedence')
 
@@ -462,13 +471,23 @@ initialize_config "$2"
 
     hidden = models / '.hidden'
     hidden.mkdir()
-    (work / 'queue').write_text(json.dumps([[0,'hidden'],[0,'path'],[0,str(hidden)],[0,'use']]))
+    (work / 'dialog.log').write_text('')
+    (work / 'queue').write_text(json.dumps([
+        [0,'hidden'], [0,'path'], [255,''],
+        [0,'path'], [0,str(models / 'missing')], [0,''],
+        [0,'path'], [0,str(hidden)], [0,'parent'], [0,'1'], [0,'use']]))
     folder_checks = r'initialize_config "$2"; [[ $(select_folder "$MODELS_DIR") == "$MODELS_DIR/.hidden" ]]'
     subprocess.run(['bash','-euo','pipefail','-c',sources+folder_checks,'test',str(root),str(model)],env=env,check=True)
+    folder_menus = [args for line in (work / 'dialog.log').read_text().splitlines()
+                    if '--menu' in (args := json.loads(line))]
+    assert [args[args.index('--default-item')+1] for args in folder_menus] == [
+        'use', 'hidden', 'path', 'path', 'use', 'use', 'use']
+    assert '.hidden/' not in folder_menus[0] and '.hidden/' in folder_menus[1]
+    assert json.loads((work / 'queue').read_text()) == []
     (work / 'queue').write_text(json.dumps([[255,'']]))
     folder_checks = r'initialize_config "$2"; previous=$MODELS_DIR; if select_folder "$MODELS_DIR"; then exit 1; fi; [[ "$MODELS_DIR" == "$previous" ]]'
     subprocess.run(['bash','-euo','pipefail','-c',sources+folder_checks,'test',str(root),str(model)],env=env,check=True)
-    print('PASS: hidden-folder navigation, typed paths and cancellation')
+    print('PASS: folder selection memory, hidden folders, parent navigation, invalid paths and cancellation')
 
     # Drive the complete TUI in a real terminal, using a deterministic dialog queue.
     for launcher in launchers:
@@ -525,8 +544,9 @@ initialize_config "$2"
                 cancel = [value for key, value in zip(args, args[1:]) if key == '--cancel-label'][-1]
                 assert cancel == ('Quit' if 'Launch server' in args else 'Back')
             main = [args for args in menus if 'Launch server' in args]
-            assert main[0][main[0].index('--default-item')+1] == 'launch'
-            assert any(args[args.index('--default-item')+1] == 'model' for args in main)
+            assert [args[args.index('--default-item')+1] for args in main] == [
+                'launch', 'configurations', 'model', 'performance',
+                'configurations', 'configurations', 'configurations', 'server']
             assert any(args[args.index('--default-item')+1] == 'context' for args in menus)
             for args in main:
                 assert args[args.index('--title')+1] == ' Main menu '

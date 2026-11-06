@@ -123,6 +123,30 @@ done
     check('latest_build_tag', {'TEST_NETWORK_FAIL': '1'}, success=False)
     print('PASS: release ordering, prereleases, network errors and literal tag validation')
 
+    check(r'''install_build() { printf '%s\0' "$@" >> "$TEST_WORK/confirmed-builds"; }
+ui() {
+    if [[ $* == *--inputbox* ]]; then
+        [[ ${TEST_CANCEL:-0} == 0 ]] || return 255
+        printf '%s' "$TEST_JOBS"
+    else return "${TEST_CONFIRM:-0}"; fi
+}
+for value in 1 64; do TEST_JOBS=$value; confirm_build v1 cpu; done
+stage=$(mktemp -d "$TEST_WORK/jobs.XXXXXXXX")
+for value in '' 0 01 -1 65 1.5 '1+1' '$(touch executed)'; do
+    TEST_JOBS=$value
+    confirm_build v1 cpu
+    if build_release "$stage" v1 cpu "$value" ''; then exit 1; fi
+done
+[[ ! -e "$stage/source" ]]
+rmdir -- "$stage"
+TEST_JOBS=2 TEST_CONFIRM=1 confirm_build v1 cpu
+TEST_JOBS=2 TEST_CANCEL=1 confirm_build v1 cpu
+''')
+    assert (work / 'confirmed-builds').read_bytes().split(b'\0')[:-1] == [
+        b'v1', b'cpu', b'1', b'v1', b'cpu', b'64']
+    assert not (work / 'git.args').exists() and not (work / 'cmake.args').exists()
+    print('PASS: compiler job boundaries, invalid inputs before checkout and canceled build confirmation')
+
     check('''LLAMA_CPP_PATH="$HOME/external"
 mkdir -p "$LLAMA_CPP_PATH"; echo original > "$LLAMA_CPP_PATH/keep"
 MODEL="$HOME/model.gguf"; touch "$MODEL"

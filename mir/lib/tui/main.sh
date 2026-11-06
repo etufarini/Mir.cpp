@@ -28,7 +28,7 @@ server_menu() {
 }
 
 configure_tui() {
-    local ACTION CHOICE UI_TITLE='Main menu'
+    local ACTION UI_TITLE='Main menu'
     [[ -t 0 && -t 1 ]] || fail 'The TUI needs a terminal. For direct startup, pass a GGUF path.'
     check_dependencies tui || exit 1
     THEME_FILE="$MIR_ROOT/dialogrc"
@@ -42,17 +42,14 @@ configure_tui() {
     ACTION=launch
     while true; do
         check_port
-        if CHOICE=$(menu --cancel-label Quit --default-item "$ACTION" --menu "$(configuration_summary)" 22 80 7 \
+        ACTION=$(menu --cancel-label Quit --default-item "$ACTION" --menu "$(configuration_summary)" 22 80 7 \
             launch 'Launch server' \
             model 'Model settings           Model and generation' \
             performance 'Performance              Device, threads, input' \
             server 'Server & port            Port and processes' \
             configurations 'Saved configurations     Load, update, save, delete' \
             paths 'Folders                  llama.cpp and models' \
-            quit 'Quit'); then ACTION=$CHOICE;
-        else
-            exit 0
-        fi
+            quit 'Quit') || exit 0
         case "$ACTION" in
             model) model_menu ;;
             performance) performance_menu ;;
