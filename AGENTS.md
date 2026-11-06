@@ -1,12 +1,12 @@
-# Instructions for mir.sh
+# Mir.cpp development instructions
 
 ## Scope and purpose
 
 These instructions apply to `mir/mir.sh`, `README.md`, these instructions and files created specifically to support the launcher.
 
-Keep the visible repository root limited to `README.md`, `AGENTS.md` and the `mir/` software folder. Keep the source entry point and `dialogrc` together inside `mir/`, modules in `mir/lib/`, tests in `mir/tests/`, the installer in `mir/sh/install.sh`, and the user guide and screenshots in `mir/docs/`. Resolve runtime paths from `MIR_ROOT`, independently of the working directory. Keep the installed `mir` command and existing installation layout compatible when reorganizing source files.
+Keep the visible repository root limited to `README.md`, `AGENTS.md`, `LICENSE` and the `mir/` software folder. Keep the source entry point and `dialogrc` together inside `mir/`, modules in `mir/lib/`, tests in `mir/tests/`, the installer in `mir/sh/install.sh`, and the user guide and screenshots in `mir/docs/`. Resolve runtime paths from `MIR_ROOT`, independently of the working directory. Keep the installed `mir` command and existing installation layout compatible when reorganizing source files.
 
-The script is a Bash launcher for the local llama.cpp server and its browser-based Web UI. Its `dialog` terminal interface discovers GGUF files under a user-selected models directory and lets the user select a model and configure context size, generation, port and performance settings before starting the server on CPU or a backend supported by the installed llama.cpp build. While running, it shows server status and offers log viewing and server shutdown. A model path and environment variables allow direct startup without the TUI. All script comments, menus, messages and project documentation must be in English.
+Mir.cpp is a Bash launcher for the local llama.cpp server and its browser-based Web UI. It can install, update and restore managed llama.cpp builds or use an existing build. Its `dialog` terminal interface discovers GGUF files under a user-selected models directory and lets the user select a model, configure context size, generation, port and performance settings, and save configurations before starting the server on CPU or a backend supported by the installed build. While running, it shows server status and offers log viewing and server shutdown. A model path and environment variables allow direct startup without the TUI. All script comments, menus, messages and project documentation must be in English.
 
 ## Platform boundaries
 
@@ -66,7 +66,7 @@ Pass both choices through `--cache-type-k` and `--cache-type-v` to the server. P
 
 Keep Default, Focused, Exploratory, Min-P and Custom sampling choices under Model settings → Generation. Default omits sampling arguments. Focused uses temperature 0.6, Top-P 0.95, Top-K 20 and Min-P 0; Exploratory changes temperature to 1; Min-P uses temperature 1, Top-P 1, Top-K 0 and Min-P 0.05. All three explicit presets set repeat penalty to 1 and presence/frequency penalties to 0. Treat presets as manual starting points, never universal quality guarantees or automatic model-family rules. Preserve context, device and performance settings when selecting a preset.
 
-Allow custom sampling values and separate seed and maximum output token controls. Applying a sampling preset preserves seed and output length. Derive the preset label from actual sampling values; persist values rather than a potentially stale label. Validate numeric inputs without evaluating them as code. Keep automatic values unset on the server command line and sampling arguments out of memory planning. Support direct startup through MIR_GENERATION_PRESET and individual MIR_* generation controls, with legacy LLAMA_* aliases and explicit trailing arguments preserved. Explain that browser chat overrides can replace server defaults; never overwrite browser preferences or conversations.
+Allow custom sampling values and separate seed and maximum output token controls. Applying a sampling preset preserves seed and output length. Derive the preset label from actual sampling values; persist values rather than a potentially stale label. Validate numeric inputs without evaluating them as code. Keep automatic values unset on the server command line. Support direct startup through MIR_GENERATION_PRESET and individual MIR_* generation controls, with legacy LLAMA_* aliases and explicit trailing arguments preserved. Explain that browser chat overrides can replace server defaults; never overwrite browser preferences or conversations.
 
 ## Saved configurations
 
