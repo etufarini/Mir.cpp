@@ -141,7 +141,7 @@ exec /bin/rm "$@"
             assert (target / name).read_bytes() == source_path(name).read_bytes()
     assert (config / 'paths.conf').read_text() == 'existing paths\n'
     assert (config / 'profiles/Personal.conf').read_text() == 'existing profile\n'
-    # Prove the installed wrapper locates its modules and forwards each argument.
+    # Launch outside the checkout to verify module lookup and literal arguments.
     model = work / 'model with spaces.gguf'
     model.touch()
     server_dir = work / 'llama.cpp'
@@ -286,7 +286,6 @@ printf '%s\\0' "$@" > "$TEST_ARGS"
     assert b'Open the server address manually' in result.stderr
     print('PASS: aggregated required dependencies before changes and optional browser warning')
 
-    # Respect XDG_DATA_HOME for a separate fresh installation.
     other_home = work / 'other home'
     other_home.mkdir()
     custom_data = work / 'custom data'
@@ -392,7 +391,6 @@ printf '%s\\0' "$@" > "$TEST_ARGS"
     assert (other_home / '.local/bin/mir').is_file()
     assert (custom_data / 'mir.cpp/current/lib/config.sh').is_file()
     print('PASS: removal, failure reporting, original paths and preservation of personal and external files')
-    # A clean reinstall works with the retained lock, followed by confirmed removal.
     # Remove the test's foreign symlink before reinstall: only removal promises to keep it.
     linked.unlink()
     install()

@@ -43,8 +43,7 @@ prepare_build_ui() {
     local stage=$1 tag=$2 metadata
     local -a asset fetch=(curl --fail --silent --show-error --location --proto '=https' --tlsv1.2
         --connect-timeout 15 --max-time 180 --retry 1)
-    # A bundled UI already belongs to the checked-out release. Modern upstream
-    # otherwise falls back to latest when shallow Git history reports build 1.
+    # Pin Web UI assets to this release instead of relying on upstream's latest.
     [[ ! -s "$stage/source/tools/ui/dist/index.html" ]] || return 0
     metadata=$("${fetch[@]}" "https://api.github.com/repos/ggml-org/llama.cpp/releases/tags/$tag" |
         python3 -c 'import json, re, sys
@@ -148,8 +147,7 @@ build_release() {
             return 1
         fi
     fi
-    # Upstream can finish successfully without Web UI assets after a download
-    # failure. Do not activate that result for a browser-based launcher.
+    # A successful compiler exit does not prove Web UI assets are present.
     if [[ ! -s "$stage/build/tools/ui/dist/index.html" && ! -s "$stage/source/tools/ui/dist/index.html" &&
         ! -s "$stage/source/tools/server/public/index.html.gz" && ! -s "$stage/source/tools/server/public/index.html" &&
         ! -s "$stage/source/examples/server/public/index.html.gz" && ! -s "$stage/source/examples/server/public/index.html" ]]; then

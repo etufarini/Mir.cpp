@@ -22,7 +22,7 @@ with tempfile.TemporaryDirectory(prefix='mir-download-') as temporary:
     command = home / '.local/bin/mir'
     previous = None
     for action in ('install', 'update'):
-        # Run actual curl and Bash connected by a pipe, checking both exit codes.
+        # A successful Bash exit can hide a failed download; check both processes.
         with subprocess.Popen(['curl', '-fsSL', '--connect-timeout', '15', '--max-time', '60', url],
                               stdout=subprocess.PIPE, env=env) as download:
             result = subprocess.run(['bash'], stdin=download.stdout, env=env, cwd='/',

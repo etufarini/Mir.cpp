@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Live memory telemetry; system RAM comes from the platform adapter.
 
 memory_available() {
     platform_memory_snapshot

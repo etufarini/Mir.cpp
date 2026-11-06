@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Trap state stays global until process exit.
 
 server_capabilities() {
     [[ "${CAPABILITIES_SERVER:-}" != "$SERVER" ]] || return 0
@@ -26,7 +25,7 @@ split_modes() {
     done <<< "$SERVER_HELP"
 }
 
-# Read only the selected option's value list, including wrapped help output.
+# Keep wrapped K/V value lists separate from draft-cache options.
 cache_types() {
     local option="--cache-type-${1,,}" help=${2-$SERVER_HELP} line word active=false values=false
     local pattern="(^|[[:space:],])$option([[:space:]=,]|$)"
@@ -106,7 +105,7 @@ refresh_gpu_settings() {
 
 launch_error() { LAUNCH_ERROR=$*; return 1; }
 
-# Inspect effective controls without changing forwarded arguments or values.
+# Read overrides for safety checks without rewriting pass-through arguments.
 resolve_endpoint() {
     local host=${SERVER_HOST:-${LLAMA_ARG_HOST:-127.0.0.1}} argument address line pattern count
     EFFECTIVE_DEVICE=${LLAMA_ARG_DEVICE:-auto}

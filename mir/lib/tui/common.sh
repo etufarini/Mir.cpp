@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 
 ui() (
-    # Let curses read the real terminal size and use our own positioning options.
-    # Scope this to the dialog child so the caller's environment stays intact.
+    # Isolate dialog's geometry overrides from the caller's environment.
     unset LINES COLUMNS DIALOGOPTS
     DIALOGRC="${THEME_FILE:-${DIALOGRC:-/dev/null}}" dialog --stdout --no-tags \
         --no-collapse --backtitle 'MIR.CPP / STATION CONTROL' \

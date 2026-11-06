@@ -93,7 +93,7 @@ memory_available
 (( $(wc -c < "$TEST_DEVICE_PROBES") == size ))
 [[ $(platform_memory_style) == system ]]
 if platform_multi_gpu_ui; then exit 1; fi
-# Even a profile with multiple devices cannot enable the new TUI controls.
+# Linux multi-GPU controls stay disabled even with a saved multi-device selection.
 TUI=true DEVICE=MTL0,MTL1 SPLIT_MODE=tensor TENSOR_SPLIT=2,1 FIT_TARGET=2048
 refresh_gpu_settings
 [[ $GPU_SETTINGS_ACTIVE == false ]]

@@ -25,7 +25,6 @@ emit_installer() {
     sed '1d' "$ROOT/lib/platform/macos-bootstrap.sh"
     sed '1d' "$ROOT/lib/runtime.sh"
     while IFS= read -r line; do
-        # Shell syntax below is emitted literally, not evaluated here.
         # shellcheck disable=SC2016
         if [[ "$line" == '    source "$MIR_ROOT/lib/platform/$1.sh" || return 1' ]]; then
             # shellcheck disable=SC2016

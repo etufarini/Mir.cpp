@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Build UI preserves the active installation until checks and saving succeed.
 
 monitor_build() (
     local stage=$1 tag=$2 backend=$3 jobs=$4 previous=$5 pid='' identity='' result interrupted=0
@@ -12,8 +11,7 @@ monitor_build() (
         [[ -z "$pid" ]] || wait "$pid" 2>/dev/null || true
     }
     trap 'result=$?; stop_build; if (( result != 0 )); then rm -rf -- "$stage"; fi' EXIT
-    # Defer exit until the worker identity is known. An interrupted ps must not
-    # leave cleanup waiting for a compiler it has no identity to signal.
+    # Defer exit until worker identity is known, so cleanup can safely stop it.
     trap 'interrupted=130' INT
     trap 'interrupted=143' TERM HUP
     # A separate session lets Cancel terminate the compiler's whole process group.
@@ -65,8 +63,7 @@ install_build() {
     if (( result == 0 )) && activate_build "$stage"; then
         message "llama.cpp $tag ($backend) is ready. Its path was saved automatically.\n\nReview your model and device settings before launching."
     else
-        # The monitor removes failed/interrupted stages; only activation can
-        # fail after it has handed back a successfully verified build.
+        # The monitor removes failed stages; this branch handles activation failure.
         if (( result == 0 )); then rm -rf -- "$stage"; fi
         if (( result == 130 || result == 143 )); then message 'Build canceled. The previous installation was kept.';
         else message 'Build or activation failed. The previous installation was kept. Open View build log for details.'; fi

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Isolated integration checks; optional argument compares a pre-refactor launcher.
+# Isolated integration checks; optional argument compares another standalone launcher.
 set -euo pipefail
 TEST_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 python3 - "$TEST_ROOT" "${1:-}" <<'PY'
@@ -561,7 +561,6 @@ initialize_config "$2"
         assert b'--ctx-size\x008192\x00' in args and b'--batch-size\x00512\x00' in args
         if launcher == root / 'mir.sh':
             assert b'--temperature\x000.7\x00' in args and b'--seed\x0042\x00' in args and b'--n-predict\x002048\x00' in args
-        # The log viewer must have received a temporary file removed by cleanup.
         boxes = [json.loads(line) for line in log.splitlines() if '--textbox' in line]
         assert boxes and not Path(boxes[0][boxes[0].index('--textbox')+1]).exists()
     print('PASS: TUI navigation, settings, readiness, logs, Stop server and temporary-log cleanup')

@@ -9,7 +9,7 @@ platform_move() {
     case "$3" in
         replace) mv -fT -- "$1" "$2" ;;
         no-clobber)
-            # Older GNU mv returns failure when a directory appeared meanwhile.
+            # GNU mv can fail when no-clobber preserves a concurrent destination.
             mv -Tn -- "$1" "$2" || [[ ( -e "$1" || -L "$1" ) && ( -e "$2" || -L "$2" ) ]] ;;
         *) return 2 ;;
     esac

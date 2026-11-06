@@ -98,7 +98,7 @@ platform_move() {
     case "$3" in
         replace) mv -fT -- "$1" "$2" ;;
         no-clobber)
-            # Older GNU mv returns failure when a directory appeared meanwhile.
+            # GNU mv can fail when no-clobber preserves a concurrent destination.
             mv -Tn -- "$1" "$2" || [[ ( -e "$1" || -L "$1" ) && ( -e "$2" || -L "$2" ) ]] ;;
         *) return 2 ;;
     esac
@@ -204,7 +204,7 @@ platform_move() {
     case "$3" in
         replace) gmv -fT -- "$1" "$2" ;;
         no-clobber)
-            # Older GNU mv returns failure when a directory appeared meanwhile.
+            # GNU mv can fail when no-clobber preserves a concurrent destination.
             gmv -Tn -- "$1" "$2" || [[ ( -e "$1" || -L "$1" ) && ( -e "$2" || -L "$2" ) ]] ;;
         *) return 2 ;;
     esac
@@ -306,8 +306,7 @@ main() {
     COMMAND="$BIN_DIR/mir"
     MARKER='# Mir.cpp managed launcher'
     mkdir -p -- "$INSTALL_DIR"
-    # Keep the lock inode so installers cannot lock different files at this path.
-    # The kernel releases the lock on exit.
+    # Keep the inode so concurrent installers lock the same file.
     exec 9> "$INSTALL_DIR/.install.flock"
     flock -n 9 || fail 'Another Mir.cpp installation is running. Retry when it finishes.'
     NEW_COMMAND=true
@@ -349,7 +348,7 @@ main() {
     mapfile -t FILES < <(runtime_files)
     MEMBERS=()
     for file in "${FILES[@]}"; do MEMBERS+=("Mir.cpp-main/mir/$file"); done
-    # Keep the installed runtime flat so the stable wrapper also works on rollback.
+    # Preserve the flat runtime layout expected by installed wrappers.
     tar -xzf "$STAGE/source.tar.gz" --no-same-owner --no-same-permissions \
         --strip-components=2 -C "$STAGE" -- "${MEMBERS[@]}" 9>&-
     DOCUMENTS=(README.md mir/docs/guide.md mir/docs/images/logo.png
@@ -384,8 +383,7 @@ main() {
     WRAPPER=''
     platform_move "$LINK" "$INSTALL_DIR/current" replace
     LINK=''
-    # Delete only installer-created release directories after the new copy is active.
-    # Leave unknown files and symlinks untouched, and keep the new release on errors.
+    # After activation, prune inactive install.* directories, never symlinks.
     ACTIVE="$STAGE"
     STAGE=''
     CLEAN=true

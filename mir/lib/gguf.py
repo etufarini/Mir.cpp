@@ -8,8 +8,8 @@ import sys
 def role(path):
     try:
         with open(path, "rb") as stream:
-            # Unknown versions or oversized metadata remain selectable. The
-            # installed llama.cpp, rather than this helper, decides compatibility.
+            # Leave unknown or oversized metadata selectable.
+            # llama.cpp decides model compatibility.
             limit = min(os.fstat(stream.fileno()).st_size, 32 * 1024 * 1024)
             operations = 0
             endian = "<"
