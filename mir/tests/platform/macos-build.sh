@@ -86,7 +86,7 @@ if platform_ensure_dependencies build refuse; then exit 1; fi
 [[ ! -e "$TEST_WORK/installed" ]]
 ''', {'TEST_MISSING':'1'})
     check('''check_dependencies() { [[ $1 == install ]]; }
-TEST_SDK_FAIL=1 platform_install_dependencies
+TEST_SDK_FAIL=1 platform_ensure_dependencies launcher
 capture() {
     [[ $* == 'macos_install_packages coreutils findutils dialog flock' ]]
     touch "$TEST_WORK/installed"
@@ -95,7 +95,7 @@ TEST_MISSING=1 platform_ensure_dependencies launcher capture
 ''')
     (work / 'installed').unlink()
     check('''check_dependencies() { return 1; }
-if platform_install_dependencies; then exit 1; fi
+if platform_ensure_dependencies launcher; then exit 1; fi
 ''')
     print('PASS: launcher package mapping, SDK-independent setup and native dependency failures')
     print('PASS: CPU/Metal flags, SDK prerequisite, missing Homebrew/tools, grouped packages and dependency rollback')

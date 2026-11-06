@@ -20,7 +20,7 @@ memory_available() {
 }
 
 memory_estimate() {
-    local helper="${SERVER%/*}/llama-fit-params" output help flag value name model context compute extra parallel unified
+    local helper="${SERVER%/*}/llama-fit-params" output help flag value name model context compute extra parallel unified i
     local -a fitted=() words=() estimator_args=()
     local -A pool_seen=()
     MEMORY_NAMES=(); MEMORY_MIB=()
@@ -76,8 +76,8 @@ memory_estimate() {
     fi
     # Explicit placement can still be measured when fitting reports insufficient
     # memory. This is precisely where showing a negative margin is useful.
-    while (( ${#words[@]} )); do
-        flag=${words[0]}; value=${words[1]}; words=("${words[@]:2}")
+    for ((i=0; i<${#words[@]}; i+=2)); do
+        flag=${words[i]}; value=${words[i+1]}
         case "$flag" in
             -c) [[ "$value" =~ ^[0-9]+$ ]] || return 0 ;;
             -ngl) [[ "$value" =~ ^-?[0-9]+$ ]] || return 0 ;;
@@ -113,8 +113,8 @@ memory_gib() {
 
 # dialog's 80-column box needs space for borders and horizontal padding.
 memory_width() {
-    local rows columns width=72
-    if [[ -t 0 ]] && read -r rows columns < <(stty size 2>/dev/null) && [[ "$columns" =~ ^[0-9]{1,3}$ ]]; then
+    local _ columns width=72
+    if [[ -t 0 ]] && read -r _ columns < <(stty size 2>/dev/null) && [[ "$columns" =~ ^[0-9]{1,3}$ ]]; then
         if (( columns > 0 && columns < 80 )); then width=$((columns - 8)); fi
     fi
     (( width >= 16 )) || width=16
