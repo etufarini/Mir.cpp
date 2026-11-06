@@ -4,8 +4,13 @@
 
 # Mir.cpp
 
-Run local GGUF models with llama.cpp through a terminal menu on Linux and macOS.
-Choose a model, adjust its settings, save configurations and chat in your browser.
+Install and manage llama.cpp on Linux and macOS through simple terminal menus.
+Choose a local GGUF model, adjust its settings, save configurations and launch
+the chat interface in your browser.
+
+Designed for Linux and macOS users who are comfortable with a terminal and want
+a simple, guided way to set up and run local language models.
+
 Mir.cpp supports Linux with CPU, Vulkan and CUDA builds, and macOS with CPU and Metal.
 CUDA still needs validation on NVIDIA hardware. The name comes from the Mir space station.
 
