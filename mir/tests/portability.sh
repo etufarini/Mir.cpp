@@ -79,7 +79,7 @@ path.write_text(json.dumps(queue))
 sys.stdout.write(value)
 sys.exit(status)
 ''')
-    env = {k:v for k,v in os.environ.items() if not k.startswith(('LLAMA_', 'SPUTNIK_', 'MIR_'))}
+    env = {k:v for k,v in os.environ.items() if not k.startswith(('LLAMA_', 'MIR_'))}
     env.update(PATH=str(commands) + ':' + env['PATH'], XDG_CONFIG_HOME=str(work / 'config'),
                MIR_LLAMA_CPP_DIR=str(server_dir), MIR_MODELS_DIR=str(models),
                TEST_HELP=help_text, TEST_DEVICES='Available devices:\n  Vulkan0: First GPU\n  Vulkan1: Second GPU',

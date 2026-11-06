@@ -12,7 +12,7 @@ with tempfile.TemporaryDirectory(prefix='mir-download-') as temporary:
     home = Path(temporary) / 'home with spaces'
     home.mkdir()
     env = {key: value for key, value in os.environ.items()
-           if not key.startswith(('MIR_', 'SPUTNIK_', 'LLAMA_', 'XDG_'))}
+           if not key.startswith(('MIR_', 'LLAMA_', 'XDG_'))}
     env['HOME'] = str(home)
     config = home / '.config/mir.cpp'
     (config / 'profiles').mkdir(parents=True)
