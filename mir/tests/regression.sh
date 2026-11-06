@@ -75,7 +75,7 @@ p.write_text(json.dumps(queue))
 sys.stdout.write(value)
 sys.exit(status)
 ''')
-    env = {k: v for k, v in os.environ.items() if not k.startswith(('LLAMA_', 'SPUTNIK_', 'MIR_'))}
+    env = {k: v for k, v in os.environ.items() if not k.startswith(('LLAMA_', 'MIR_'))}
     env.update(PATH=str(bin_dir) + ':' + env['PATH'], XDG_CONFIG_HOME=str(work / 'config'),
                LLAMA_CPP_DIR=str(server_dir), LLAMA_MODELS_DIR=str(models),
                TEST_ARGS=str(work / 'args'), TEST_PID=str(work / 'pid'),
@@ -87,8 +87,7 @@ sys.exit(status)
         result = subprocess.run(['bash', str(launcher), str(model)] + (arguments or []),
                                 env=env | (overrides or {}), cwd='/', capture_output=True, timeout=8)
         error = result.stderr
-        for prefix in (b'MIR_', b'SPUTNIK_'):
-            error = error.replace(prefix + b'LLAMA_CPP_DIR', b'LLAMA_CPP_DIR').replace(prefix, b'LLAMA_')
+        error = error.replace(b'MIR_LLAMA_CPP_DIR', b'LLAMA_CPP_DIR').replace(b'MIR_', b'LLAMA_')
         return result.returncode, result.stdout, error, args_file.read_bytes() if args_file.exists() else None
     cases = [({}, []), ({'LLAMA_DEVICE':'none', 'LLAMA_GPU_LAYERS':'all'}, []),
              ({'LLAMA_THREADS':'4', 'LLAMA_GPU_LAYERS':'12', 'LLAMA_DEVICE':'Vulkan0',
@@ -102,10 +101,9 @@ sys.exit(status)
              ({'TEST_EXIT':'7'}, [])]
     for index, (overrides, arguments) in enumerate(cases):
         results = [run(launcher, overrides, arguments) for launcher in launchers]
-        for prefix in ('MIR_', 'SPUTNIK_'):
-            renamed = {(prefix + 'LLAMA_CPP_DIR' if key == 'LLAMA_CPP_DIR' else key.replace('LLAMA_', prefix, 1)): value
-                       for key, value in overrides.items()}
-            assert run(root / 'mir.sh', renamed, arguments) == results[0], (index, prefix)
+        renamed = {('MIR_LLAMA_CPP_DIR' if key == 'LLAMA_CPP_DIR' else key.replace('LLAMA_', 'MIR_', 1)): value
+                   for key, value in overrides.items()}
+        assert run(root / 'mir.sh', renamed, arguments) == results[0], index
         assert all(r == results[0] for r in results), (index, results)
         code, _, error, args = results[0]
         if index < 4:
@@ -188,30 +186,28 @@ printf '%s\\n' "$LLAMA_CPP_PATH" "$MODELS_DIR" "$SERVER_HOST" "$(generation_pres
     for suffix, value in control_values.items():
         legacy = 'LLAMA_' + ('CPP_DIR' if suffix == 'LLAMA_CPP_DIR' else suffix)
         expected = control_snapshot({legacy: value})
-        assert control_snapshot({'MIR_' + suffix: value, 'SPUTNIK_' + suffix: 'bad', legacy: 'bad'}) == expected
-        assert control_snapshot({'SPUTNIK_' + suffix: value, legacy: 'bad'}) == expected
-    for prefix in ('MIR_', 'SPUTNIK_'):
-        assert run(root / 'mir.sh', {prefix + 'THREADS': '', 'LLAMA_THREADS': '4'})[0] == 1
-        assert run(root / 'mir.sh', {prefix + 'TEMPERATURE': '', 'LLAMA_TEMPERATURE': '0.7'})[0] == 1
+        assert control_snapshot({'MIR_' + suffix: value, legacy: 'bad'}) == expected
+    assert run(root / 'mir.sh', {'MIR_THREADS': '', 'LLAMA_THREADS': '4'})[0] == 1
+    assert run(root / 'mir.sh', {'MIR_TEMPERATURE': '', 'LLAMA_TEMPERATURE': '0.7'})[0] == 1
     literal_checks = r'''
 MIR_HOST=$'$(touch executed)\n'
 read_launcher_control literal HOST default
 [[ "$literal" == "$MIR_HOST" && ! -e executed ]]
 unset MIR_HOST
-SPUTNIK_THREADS=3
+MIR_THREADS=3
 initialize_config "$2"
-[[ $THREADS == 3 && ! -v MIR_THREADS ]]
-SPUTNIK_THREADS=4
+[[ $THREADS == 3 && ! -v LLAMA_THREADS ]]
+MIR_THREADS=4
 initialize_config "$2"
-[[ $THREADS == 4 && ! -v MIR_THREADS ]]
-unset SPUTNIK_THREADS
+[[ $THREADS == 4 && ! -v LLAMA_THREADS ]]
+unset MIR_THREADS
 LLAMA_THREADS=''
 initialize_config "$2"
 [[ $THREADS == auto ]]
 '''
     subprocess.run(['bash', '-euo', 'pipefail', '-c', sources + literal_checks, 'test', str(root), str(model)],
                    env=env, cwd=work, check=True)
-    print('PASS: all current/previous/legacy control priorities, explicit empties, literal values and repeat initialization')
+    print('PASS: all current/legacy control priorities, explicit empties, literal values and repeat initialization')
     checks = r'''
 initialize_config "$2"
 validate_config
@@ -368,17 +364,14 @@ MODEL=''
     assert not imported.exists() and (legacy / 'paths.conf').read_text() == paths_data
     assert not list(migration_base.glob('.mir-migration.*'))
     check_migration(migration_check)
-    # Existing Mir settings win even when a more recent legacy source appears.
-    previous = migration_base / 'sputnik.cpp'
-    shutil.copytree(legacy, previous)
+    # Existing Mir settings win even when the legacy source changes.
     recent_profile = profile_data.replace(b'context=4096', b'context=8192')
-    (previous / 'profiles/Old.conf').write_bytes(recent_profile)
+    (legacy / 'profiles/Old.conf').write_bytes(recent_profile)
     check_migration(migration_check + '; [[ $CTX_SIZE == 4096 ]]')
     shutil.rmtree(imported)
     check_migration(migration_check + '; [[ $CTX_SIZE == 8192 ]]')
     assert (imported / 'profiles/Old.conf').read_bytes() == recent_profile
-    assert (previous / 'profiles/Old.conf').read_bytes() == recent_profile
-    assert (legacy / 'profiles/Old.conf').read_bytes() == profile_data
+    assert (legacy / 'profiles/Old.conf').read_bytes() == recent_profile
     shutil.rmtree(imported)
     check_migration('cp() { return 1; }; initialize_config "$2"', success=False)
     assert not imported.exists() and not list(migration_base.glob('.mir-migration.*'))

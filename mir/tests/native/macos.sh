@@ -25,7 +25,7 @@ if sys.platform != 'darwin':
 modern = shutil.which('bash')
 assert subprocess.run([modern, '-c', '(( BASH_VERSINFO[0] >= 4 ))']).returncode == 0
 system_path = '/usr/bin:/bin:/usr/sbin:/sbin'
-base = {k:v for k,v in os.environ.items() if not k.startswith(('MIR_', 'SPUTNIK_', 'LLAMA_', 'XDG_'))}
+base = {k:v for k,v in os.environ.items() if not k.startswith(('MIR_', 'LLAMA_', 'XDG_'))}
 with tempfile.TemporaryDirectory(prefix='mir-bootstrap-') as temporary:
     work = Path(temporary).resolve()
     commands = work / 'commands'

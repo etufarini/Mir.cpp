@@ -61,7 +61,7 @@ if [[ $1 == --help ]]; then echo '--fit-print --parallel'; exit 0; fi
 if [[ ${*: -1} == off ]]; then echo '-c 512 -ngl -1';
 else printf '%s\\n' 'MTL0 7000 1000 192' 'Host 512 256 256'; fi
 ''')
-    env = {k:v for k,v in os.environ.items() if not k.startswith(('MIR_', 'SPUTNIK_', 'LLAMA_', 'XDG_'))}
+    env = {k:v for k,v in os.environ.items() if not k.startswith(('MIR_', 'LLAMA_', 'XDG_'))}
     env.update(PATH=str(commands) + ':' + native_path, HOME=str(work), XDG_CONFIG_HOME=str(work / 'config'),
                MIR_LLAMA_CPP_DIR=str(package), MIR_MODELS_DIR=str(models), TEST_SOCKETS='', TEST_PIDS='',
                TEST_VM_STAT=snapshot, TEST_BROWSER=str(work / 'browser'), TEST_ARGS=str(work / 'args'), TEST_DEVICE_PROBES=str(work / 'probes'))
@@ -198,12 +198,12 @@ run_server
     assert (work / 'browser').read_text() == 'http://127.0.0.1:9931'
     assert b'--model\0' in (work / 'args').read_bytes()
     # Migration keeps the original and never merges with existing settings.
-    legacy = work / 'migration/sputnik.cpp'
+    legacy = work / 'migration/llama-launcher'
     legacy.mkdir(parents=True)
     (legacy / 'paths.conf').write_text('llama_dir=old\nmodels_dir=old\n')
     check('''CONFIG_DIR="$HOME/migration/mir.cpp"
 migrate_config
-[[ -f "$CONFIG_DIR/paths.conf" && -f "$HOME/migration/sputnik.cpp/paths.conf" ]]
+[[ -f "$CONFIG_DIR/paths.conf" && -f "$HOME/migration/llama-launcher/paths.conf" ]]
 printf unchanged > "$CONFIG_DIR/paths.conf"
 migrate_config
 [[ $(cat "$CONFIG_DIR/paths.conf") == unchanged ]]

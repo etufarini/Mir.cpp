@@ -68,14 +68,12 @@ valid_generation_value() {
 # Keep explicit empty values and copy data literally, without eval or exporting
 # aliases. Legacy LLAMA_* fallbacks retain their original empty-value behavior.
 read_launcher_control() {
-    local control
-    for control in "MIR_$2" "SPUTNIK_$2"; do
-        if [[ -v "$control" ]]; then
-            printf -v "$1" '%s' "${!control}"
-            return 0
-        fi
-    done
-    printf -v "$1" '%s' "$3"
+    local control="MIR_$2"
+    if [[ -v "$control" ]]; then
+        printf -v "$1" '%s' "${!control}"
+    else
+        printf -v "$1" '%s' "$3"
+    fi
 }
 
 initialize_config() {

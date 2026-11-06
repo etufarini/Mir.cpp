@@ -92,7 +92,7 @@ exec /bin/rm "$@"
 ''')
     executable(bin_dir / 'ss', '#!/usr/bin/env bash\nexit 0\n')
     executable(bin_dir / 'sleep', '#!/usr/bin/env bash\n/bin/sleep 0.01\n')
-    env = {k: v for k, v in os.environ.items() if not k.startswith(('LLAMA_', 'SPUTNIK_', 'MIR_', 'XDG_'))}
+    env = {k: v for k, v in os.environ.items() if not k.startswith(('LLAMA_', 'MIR_', 'XDG_'))}
     env.update(HOME=str(home), PATH=str(bin_dir) + ':' + os.environ['PATH'],
                TEST_ARCHIVE=str(archive), TEST_DOWNLOAD_ARGS=str(work / 'download-args'),
                XDG_CONFIG_HOME=str(home / 'config'))
@@ -113,18 +113,18 @@ exec /bin/rm "$@"
     (config / 'paths.conf').write_text('existing paths\n')
     (config / 'profiles').mkdir()
     (config / 'profiles/Personal.conf').write_text('existing profile\n')
-    # A new identity must not remove or rewrite a previous installation.
-    previous = home / '.local/share/sputnik.cpp'
+    # Installation must preserve unrelated applications and their settings.
+    previous = home / '.local/share/other-app'
     (previous / 'releases/old').mkdir(parents=True)
-    (previous / 'releases/old/sputnik.sh').write_text('previous program\n')
+    (previous / 'releases/old/other-app.sh').write_text('previous program\n')
     (previous / 'current').symlink_to('releases/old')
-    previous_command = home / '.local/bin/sputnik'
-    executable(previous_command, '#!/bin/sh\n# Sputnik.cpp managed launcher\nprintf "previous command\\n"\n')
-    previous_config = home / 'config/sputnik.cpp'
+    previous_command = home / '.local/bin/other-app'
+    executable(previous_command, '#!/bin/sh\n# Other application\nprintf "previous command\\n"\n')
+    previous_config = home / 'config/other-app'
     (previous_config / 'profiles').mkdir(parents=True)
     (previous_config / 'paths.conf').write_text('previous paths\n')
     (previous_config / 'profiles/Old.conf').write_text('previous profile\n')
-    previous_files = {p: p.read_bytes() for p in [previous_command, previous / 'releases/old/sputnik.sh']}
+    previous_files = {p: p.read_bytes() for p in [previous_command, previous / 'releases/old/other-app.sh']}
     previous_files.update({p: p.read_bytes() for p in previous_config.rglob('*') if p.is_file()})
     package(marker='first')
     install({'TEST_ACTIVATION':'fail'}, success=False)
@@ -403,5 +403,5 @@ printf '%s\\0' "$@" > "$TEST_ARGS"
     assert os.readlink(previous / 'current') == 'releases/old'
     assert subprocess.check_output([str(previous_command)]) == b'previous command\n'
     assert not host_brew or Path(host_brew).read_bytes() == host_brew_data
-    print('PASS: previous launcher command, installed program, saved settings and host Homebrew are preserved')
+    print('PASS: unrelated application command, program, settings and host Homebrew are preserved')
 PY

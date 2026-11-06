@@ -14,16 +14,9 @@ server_path() {
 # Import legacy data once. Never source it, overwrite a new configuration, or
 # remove the original. Stage beside the destination for an atomic rename.
 migrate_config() {
-    local legacy='' candidate temporary
+    local legacy="${CONFIG_DIR%/*}/llama-launcher" temporary
     if [[ -e "$CONFIG_DIR" || -L "$CONFIG_DIR" ]]; then return 0; fi
-    # Prefer the most recent identity; never merge independently saved settings.
-    for candidate in sputnik.cpp llama-launcher; do
-        if [[ -d "${CONFIG_DIR%/*}/$candidate" ]]; then
-            legacy="${CONFIG_DIR%/*}/$candidate"
-            break
-        fi
-    done
-    [[ -n "$legacy" ]] || return 0
+    [[ -d "$legacy" ]] || return 0
     mkdir -p -- "${CONFIG_DIR%/*}" || return 1
     temporary=$(mktemp -d "${CONFIG_DIR%/*}/.mir-migration.XXXXXXXX") || return 1
     if cp -a -- "$legacy/." "$temporary/" && platform_move "$temporary" "$CONFIG_DIR" no-clobber; then

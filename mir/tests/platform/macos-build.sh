@@ -29,7 +29,7 @@ printf 'BREW_OUTPUT\\n'
 : > "$TEST_WORK/installed"
 ''')
     brew.chmod(0o755)
-    env = {k:v for k,v in os.environ.items() if not k.startswith(('MIR_', 'SPUTNIK_', 'LLAMA_', 'XDG_'))}
+    env = {k:v for k,v in os.environ.items() if not k.startswith(('MIR_', 'LLAMA_', 'XDG_'))}
     env.update(HOME=str(work), XDG_CONFIG_HOME=str(work / 'config'),
                PATH=str(commands) + ':' + os.environ['PATH'], TEST_WORK=str(work),
                TERM='xterm-256color', LANG='C.UTF-8')

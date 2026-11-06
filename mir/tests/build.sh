@@ -98,7 +98,7 @@ exec "$TEST_REAL_PS" "$@"
 ''')
     executable('ss', '#!/usr/bin/env bash\nexit 0\n')
     executable('setsid', '#!/usr/bin/env python3\nimport os, sys\nos.setsid()\nos.execvp(sys.argv[1], sys.argv[1:])\n')
-    env = {k: v for k, v in os.environ.items() if not k.startswith(('MIR_', 'SPUTNIK_', 'LLAMA_', 'XDG_'))}
+    env = {k: v for k, v in os.environ.items() if not k.startswith(('MIR_', 'LLAMA_', 'XDG_'))}
     env.update(HOME=str(home), XDG_CONFIG_HOME=str(home / 'config'),
                XDG_DATA_HOME=str(home / 'data'), PATH=str(commands) + ':' + os.environ['PATH'],
                MIR_ROOT=str(root), TEST_GPU=gpu, TEST_WORK=str(work), TEST_REAL_PS=shutil.which('ps'))
