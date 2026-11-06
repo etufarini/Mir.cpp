@@ -45,8 +45,7 @@ exit "${TEST_VM_STAT_EXIT:-0}"
 case "$1" in
     --help)
         printf '%s\\n' '--model --port --device --gpu-layers --cache-type-k --cache-type-v'
-        if [[ ${TEST_SERVER_AUTO:-0} == 1 ]]; then echo 'number of server slots (default: -1, -1 = auto)';
-        else echo 'number of server slots (default: 1)'; fi ;;
+        echo 'number of server slots (default: 1)' ;;
     --list-devices) printf probe >> "$TEST_DEVICE_PROBES"; /bin/sleep "${TEST_DEVICE_DELAY:-0}"; printf 'Available devices:\\n  MTL0: Test GPU (8192 MiB, 4096 MiB free)\\n' ;;
     *) printf '%s\\0' "$@" > "$TEST_ARGS"; /bin/sleep 0.2 ;;
 esac
