@@ -12,6 +12,7 @@ SERVER="$work/build/bin/llama-server"
 MODEL="$work/model with spaces.gguf"
 touch "$MODEL"
 CTX_SIZE=4096 THREADS=auto DEVICE=auto GPU_LAYERS=auto PROMPT_PROCESSING=auto
+CACHE_TYPE_K=q4_0 CACHE_TYPE_V=q4_0
 export MEMORY_TEST_WORK="$work"
 cat > "$SERVER" <<'MOCK'
 #!/usr/bin/env bash
@@ -25,7 +26,13 @@ esac
 MOCK
 cat > "$work/build/bin/llama-fit-params" <<'MOCK'
 #!/usr/bin/env bash
-if [[ "$1" == --help ]]; then printf '%s\n' "${MEMORY_TEST_HELP:---fit-print --parallel}"; exit 0; fi
+if [[ "$1" == --help ]]; then
+    printf '%s\n' "${MEMORY_TEST_HELP:---fit-print --parallel}" "${MEMORY_TEST_CACHE_HELP:---cache-type-k TYPE
+    allowed values: f16, q8_0, q4_0
+--cache-type-v TYPE
+    allowed values: f16, q8_0, q4_0}"
+    exit 0
+fi
 printf '%s\0' "$@" >> "$MEMORY_TEST_WORK/args"
 if [[ "${*: -1}" == off ]]; then
     [[ ! -f "$MEMORY_TEST_WORK/fit-failed" ]] || exit 1
@@ -74,6 +81,35 @@ refresh_memory
 CTX_SIZE=8192
 refresh_memory
 (( $(wc -c < "$work/args") > size ))
+for cache_setting in CACHE_TYPE_K CACHE_TYPE_V; do
+    size=$(wc -c < "$work/args")
+    printf -v "$cache_setting" '%s' q8_0
+    refresh_memory
+    (( $(wc -c < "$work/args") > size ))
+done
+python3 - "$work/args" <<'PYARGS'
+import sys
+from pathlib import Path
+args = Path(sys.argv[1]).read_bytes().split(b'\0')[:-1]
+assert args.count(b'--cache-type-k') == args.count(b'--cache-type-v') == args.count(b'--fit-print')
+last = len(args) - 1 - args[::-1].index(b'--cache-type-k')
+assert args[last:last+4] == [b'--cache-type-k', b'q8_0', b'--cache-type-v', b'q8_0']
+PYARGS
+size=$(wc -c < "$work/args")
+export LLAMA_ARG_FLASH_ATTN=on
+refresh_memory
+(( $(wc -c < "$work/args") > size ))
+unset LLAMA_ARG_FLASH_ATTN
+export MEMORY_TEST_CACHE_HELP='--cache-type-k TYPE
+allowed values: q4_0'
+MEMORY_KEY=''
+refresh_memory
+[[ ${#MEMORY_NAMES[@]} == 0 && $(memory_line live) == *'Free GiB: RAM'* ]]
+unset MEMORY_TEST_CACHE_HELP
+CACHE_TYPE_K=q4_0 CACHE_TYPE_V=q4_0 MEMORY_KEY=''
+refresh_memory
+[[ ${#MEMORY_NAMES[@]} == 2 ]]
+printf 'PASS: matching K/V planner arguments, independent cache changes, native Flash Attention and unsupported planner fallback\n'
 DEVICE_FREE[Accelerator0]=8500
 [[ $(memory_line estimate) == *'GPU 0.3'* ]]
 DEVICE_FREE[Accelerator0]=8000

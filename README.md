@@ -52,13 +52,13 @@ If the command is not found, use `~/.local/bin/mir` or add `~/.local/bin` to you
    or CPU/Metal on macOS. You can also select an existing **llama.cpp folder**.
 2. Choose your **Models folder** in **Folders**. Models can be organized in subfolders.
 3. Choose a GGUF from **Model settings → Model**, then review the settings.
-   Start with **Auto** and **Default** values.
+   Start with **Auto** and **Default** values; KV Cache defaults to **Q4_0** for K and V.
 4. Select **Launch server**. The browser opens when ready, normally at
    `http://127.0.0.1:9931`. Keep the terminal open while chatting.
 
-[<img src="mir/docs/screenshots/model-settings.png" alt="Model settings menu with model, context and generation controls" width="640">](mir/docs/screenshots/model-settings.png)
+[<img src="mir/docs/screenshots/model-settings.png" alt="Model settings menu with model, context, KV Cache and generation controls" width="640">](mir/docs/screenshots/model-settings.png)
 
-*Choose a supported context size. Larger contexts need more memory.*
+*Choose a supported context size and cache type. Larger contexts need more memory.*
 
 Terminal settings configure the server; browser chat settings can override generation defaults.
 Use **View log** if loading fails and **Stop server** when finished. Closing the browser

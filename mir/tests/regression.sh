@@ -46,7 +46,7 @@ if [[ ${1:-} == --list-devices ]]; then
 fi
 if [[ ${1:-} == --help ]]; then
     echo 'number of server slots (default: 1)'
-    echo '--model --port --host --ctx-size --device --threads --gpu-layers --batch-size --ubatch-size --temperature --top-p --top-k --min-p --repeat-penalty --presence-penalty --frequency-penalty --seed --n-predict'
+    echo '--model --port --host --ctx-size --device --threads --gpu-layers --batch-size --ubatch-size --temperature --top-p --top-k --min-p --repeat-penalty --presence-penalty --frequency-penalty --seed --n-predict --cache-type-k --cache-type-v'
     exit 0
 fi
 printf '%s\\0' "$@" > "$TEST_ARGS"
@@ -258,7 +258,7 @@ set_generation_preset min-p
 build_model_args
 [[ $(printf '%s\n' "${MODEL_ARGS[@]}") == "$planner_args" ]]
 write_profile "$PROFILES_DIR/Generation.conf"
-(( $(wc -l < "$PROFILES_DIR/Generation.conf") == 16 ))
+(( $(wc -l < "$PROFILES_DIR/Generation.conf") == 18 ))
 saved=$(profile_data)
 GENERATION[temperature]=0.8
 [[ $(generation_preset) == custom && $(profile_status) == 'Generation (Modified)' ]]
@@ -269,7 +269,7 @@ GENERATION[seed]=8
 GENERATION[seed]=7
 [[ $(profile_status) == Generation ]]
 before=$(profile_data)
-for field in model context port device threads gpu_layers prompt_processing "${GENERATION_KEYS[@]}"; do
+for field in model context port device threads gpu_layers prompt_processing cache_type_k cache_type_v "${GENERATION_KEYS[@]}"; do
     while IFS= read -r line; do
         [[ "$line" == "$field="* ]] || printf '%s\n' "$line"
     done < "$PROFILES_DIR/Generation.conf" > "$PROFILES_DIR/Incomplete.conf"
@@ -304,7 +304,7 @@ generation_menu
 rm "$PROFILES_DIR/Generation.conf" "$PROFILES_DIR/Incomplete.conf" "$PROFILES_DIR/Invalid.conf"
 '''
     subprocess.run(['bash','-euo','pipefail','-c',sources+generation_checks,'test',str(root),str(model)],env=env,check=True)
-    print('PASS: sixteen-field profiles, required fields, Modified tracking, rollback, cancellation and planner isolation')
+    print('PASS: eighteen-field profiles, required fields, Modified tracking, rollback, cancellation and planner isolation')
 
     summary_checks = r'''
 initialize_config "$2"
@@ -342,6 +342,7 @@ MODEL=''
     (legacy / 'paths.conf').write_text(paths_data)
     profile_data = (f'model={model}\ncontext=4096\nport=9931\n'
                     'device=auto\nthreads=auto\ngpu_layers=auto\nprompt_processing=auto\n'
+                    'cache_type_k=q4_0\ncache_type_v=q4_0\n'
                     + ''.join(f'{key}=auto\n' for key in [*sampling, 'seed', 'max_tokens'])).encode()
     (legacy / 'profiles/Old.conf').write_bytes(profile_data)
     migration_env = {k:v for k,v in env.items() if k not in ('LLAMA_CPP_DIR','LLAMA_MODELS_DIR')}
@@ -450,8 +451,8 @@ initialize_config "$2"
             assert model_menus
             for args in model_menus:
                 index = args.index('--menu')
-                assert args[index+4] == '4'
-                assert args[index+5::2] == ['model','context','generation','back']
+                assert args[index+4] == '5'
+                assert args[index+5::2] == ['model','context','cache','generation','back']
             assert all(args[args.index('--ok-label')+1] == 'Select' for args in menus)
             for args in menus:
                 cancel = [value for key, value in zip(args, args[1:]) if key == '--cancel-label'][-1]

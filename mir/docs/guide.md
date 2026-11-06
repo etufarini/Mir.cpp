@@ -63,7 +63,7 @@ display. All seven actions fit an 80×24 terminal:
 | Menu | Purpose |
 | --- | --- |
 | Launch server | Start the model with the displayed settings. |
-| Model settings | Select a model, context and generation settings. |
+| Model settings | Select a model, context, KV Cache types and generation settings. |
 | Performance | Select devices, CPU threads, GPU layers and prompt processing. |
 | Server & port | Edit the port, refresh status, inspect or stop listeners. |
 | Saved configurations | Load, update, save or delete settings. |
@@ -177,12 +177,41 @@ Use the same `XDG_DATA_HOME` to manage them later.
 
 ## Model and performance settings
 
-Under **Model settings**, choose a model, context and generation settings.
+Under **Model settings**, choose a model, context, KV Cache types and generation settings.
 **Auto** context omits the context argument, leaving native model, environment
 and memory choices in effect. Fixed choices range from 4K to 256K (1K = 1024
 tokens). **Custom** accepts `auto` or 0–2147483647 tokens; `0` requests full model
 context and may need much more memory. Context includes input and output. Available context sizes depend
 on the model and installed llama.cpp.
+
+### KV Cache
+
+Open **Model settings → KV Cache** to select **K (keys)** and **V (values)**
+separately. Both default to **Q4_0**, explicitly passed as `--cache-type-k q4_0`
+and `--cache-type-v q4_0`. These types affect cached attention data, not the
+quantization of the GGUF model weights.
+
+The primary choices are **Q4_0** for lower memory use, **Q8_0** for less aggressive
+quantization and **F16** for an unquantized cache using more memory. Lower
+precision may affect output quality; compare your own tasks and context sizes.
+**Other formats** lists additional types advertised by the selected server. For
+example, build b12138 advertises F32, BF16, Q4_1, IQ4_NL, Q5_0 and Q5_1 as well.
+Only advertised types are offered. If probing fails, existing values are kept.
+
+Advertised types are parser capabilities, not a guarantee for every model or
+backend. Quantized V requires Flash Attention; the installed b12138 build enables
+it when automatic. Mir.cpp leaves Flash Attention automatic and preserves native
+overrides. Explicitly disabling it can make quantized V fail. Mixed K/V types may
+be unsupported or slower; use matching types when unsure. Some architectures
+require matching K/V types. No type or precision is silently substituted by
+Mir.cpp. Native compatibility errors remain available in **View log**; adjust the
+cache types or select another build before retrying.
+
+Cache choices persist in named configurations and are passed to the memory
+planner too. A planner that cannot advertise both selected types leaves estimates
+unavailable, without blocking launch or live memory readings.
+
+### Performance
 
 Start with **Auto** and **Default** under **Performance**:
 
@@ -290,10 +319,10 @@ the label to **Not saved**.
 
 Profiles are plain `key=value` files under
 `${XDG_CONFIG_HOME:-$HOME/.config}/mir.cpp/profiles/`; back up this folder to retain
-them. Each stores 16 fields: model, context, port, device, threads, GPU layers,
-prompt processing and nine generation values. All fields are required. Partial
+them. Each stores 18 fields: model, context, port, device, threads, GPU layers,
+prompt processing, K/V cache types and nine generation values. All fields are required. Partial
 or invalid profiles and missing models leave current settings unchanged. Saved
-devices are checked against the current server before launch.
+devices and cache types are checked against the current server before launch.
 
 Profiles exclude conversations, trailing arguments and unrelated environment
 settings. Global folder paths are stored separately; changing the models folder
@@ -335,6 +364,7 @@ currently displayed paths.
 | `MIR_THREADS` | `auto` or 1–2147483647; `auto`. |
 | `MIR_GPU_LAYERS` | `auto`, `all` or 0–2147483647; `auto`. |
 | `MIR_PROMPT_PROCESSING` | `auto`, `low-memory`, `large-batch`; `auto`. |
+| `MIR_CACHE_TYPE_K`, `MIR_CACHE_TYPE_V` | Lowercase type advertised by the server; `q4_0` for each unless configured otherwise. |
 
 Auto/Default omits the corresponding option and allows native llama.cpp settings
 to apply. Multi-device selections also persist in profiles. For example, use the
@@ -342,6 +372,16 @@ CPU, four threads and smaller input chunks:
 
 ```bash
 MIR_DEVICE=none MIR_THREADS=4 MIR_PROMPT_PROCESSING=low-memory \
+    ~/.local/bin/mir "/path/to/model.gguf"
+```
+
+For cache types, `MIR_CACHE_TYPE_K` and `MIR_CACHE_TYPE_V` override the respective
+native `LLAMA_ARG_CACHE_TYPE_K` and `LLAMA_ARG_CACHE_TYPE_V` values. If neither is
+set, Mir.cpp uses `q4_0`. Empty values are invalid. K/V types are always passed
+explicitly; trailing native arguments can override either component. For example:
+
+```bash
+MIR_CACHE_TYPE_K=q8_0 MIR_CACHE_TYPE_V=q8_0 \
     ~/.local/bin/mir "/path/to/model.gguf"
 ```
 
@@ -372,7 +412,8 @@ these options are not inferred from filenames or saved in profiles. Sampling
 arguments are excluded from memory planning.
 
 Legacy `LLAMA_*` launcher aliases remain supported: replace the `MIR_` prefix
-with `LLAMA_`, except `MIR_LLAMA_CPP_DIR` maps to `LLAMA_CPP_DIR`. Explicitly set
+with `LLAMA_`, except `MIR_LLAMA_CPP_DIR` maps to `LLAMA_CPP_DIR` and the new cache
+controls use only the native aliases described above. Explicitly set
 `MIR_*` values take precedence even when empty and are validated. Empty legacy
 values retain fallback defaults for paths and basic controls; empty individual
 generation aliases are validated as invalid. Native `LLAMA_ARG_*` variables

@@ -14,6 +14,8 @@ valid_device() { [[ "$1" =~ ^[a-zA-Z0-9_.:-]+(,[a-zA-Z0-9_.:-]+)*$ ]]; }
 
 valid_layers() { [[ "$1" == auto || "$1" == all ]] || valid_count "$1"; }
 
+valid_cache_type() { [[ "$1" =~ ^[a-z][a-z0-9_]{0,31}$ ]]; }
+
 valid_port() { [[ "$1" =~ ^[0-9]{1,5}$ ]] && (( 10#$1 >= 1 && 10#$1 <= 65535 )); }
 
 # The first seven fields are sampling settings; seed and length stay separate.
@@ -93,6 +95,8 @@ initialize_config() {
     read_launcher_control THREADS THREADS "${LLAMA_THREADS:-auto}"
     read_launcher_control GPU_LAYERS GPU_LAYERS "${LLAMA_GPU_LAYERS:-auto}"
     read_launcher_control PROMPT_PROCESSING PROMPT_PROCESSING "${LLAMA_PROMPT_PROCESSING:-auto}"
+    read_launcher_control CACHE_TYPE_K CACHE_TYPE_K "${LLAMA_ARG_CACHE_TYPE_K-q4_0}"
+    read_launcher_control CACHE_TYPE_V CACHE_TYPE_V "${LLAMA_ARG_CACHE_TYPE_V-q4_0}"
     declare -ga GENERATION_KEYS=(temperature top_p top_k min_p repeat_penalty presence_penalty frequency_penalty seed max_tokens)
     declare -gA GENERATION=([seed]=auto [max_tokens]=auto)
     read_launcher_control preset GENERATION_PRESET "${LLAMA_GENERATION_PRESET:-default}"
@@ -120,13 +124,17 @@ initialize_config() {
 }
 
 validate_config() {
-    local key
+    local key control
     valid_port "$PORT" || fail 'Port must be an integer between 1 and 65535.'
     PORT=$((10#$PORT))
     valid_context "$CTX_SIZE" || fail 'MIR_CTX_SIZE must be auto or an integer from 0 to 2147483647 (0 requests the full model context).'
     valid_device "$DEVICE" || fail 'MIR_DEVICE must be auto, none or a comma-separated list of device names.'
     valid_threads "$THREADS" || fail 'MIR_THREADS must be auto or a positive integer (up to 2147483647).'
     valid_layers "$GPU_LAYERS" || fail 'MIR_GPU_LAYERS must be auto, all or a nonnegative integer (up to 2147483647).'
+    for key in K V; do
+        control="CACHE_TYPE_$key"
+        valid_cache_type "${!control}" || fail "MIR_$control must be a lowercase cache type advertised by llama-server (for example q4_0, q8_0 or f16)."
+    done
     case "$PROMPT_PROCESSING" in
         auto|low-memory|large-batch) ;;
         *) fail 'MIR_PROMPT_PROCESSING must be auto, low-memory or large-batch.' ;;

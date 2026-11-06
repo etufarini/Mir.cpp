@@ -49,7 +49,7 @@ exit "${TEST_VM_STAT_EXIT:-0}"
     executable(package / 'bin/llama-server', '''#!/usr/bin/env bash
 case "$1" in
     --help)
-        printf '%s\\n' '--model --port --device --gpu-layers'
+        printf '%s\\n' '--model --port --device --gpu-layers --cache-type-k --cache-type-v'
         if [[ ${TEST_SERVER_AUTO:-0} == 1 ]]; then echo 'number of server slots (default: -1, -1 = auto)';
         else echo 'number of server slots (default: 1)'; fi ;;
     --list-devices) printf probe >> "$TEST_DEVICE_PROBES"; /bin/sleep "${TEST_DEVICE_DELAY:-0}"; printf 'Available devices:\\n  MTL0: Test GPU (8192 MiB, 4096 MiB free)\\n' ;;
@@ -57,7 +57,10 @@ case "$1" in
 esac
 ''')
     executable(package / 'bin/llama-fit-params', '''#!/usr/bin/env bash
-if [[ $1 == --help ]]; then echo '--fit-print --parallel'; exit 0; fi
+if [[ $1 == --help ]]; then
+    printf '%s\\n' '--fit-print --parallel' '--cache-type-k TYPE' 'allowed values: q4_0' '--cache-type-v TYPE' 'allowed values: q4_0'
+    exit 0
+fi
 if [[ ${*: -1} == off ]]; then echo '-c 512 -ngl -1';
 else printf '%s\\n' 'MTL0 7000 1000 192' 'Host 512 256 256'; fi
 ''')

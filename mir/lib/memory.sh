@@ -27,6 +27,12 @@ memory_estimate() {
     [[ -x "$helper" && -f "$MODEL" ]] || return 0
     help=$(platform_timeout 20 "$helper" --help) || return 0
     [[ "$help" == *--fit-print* ]] || return 0
+    # A planner must advertise both selected types to estimate this cache.
+    for flag in K V; do
+        name="CACHE_TYPE_$flag"
+        value=$(cache_types "$flag" "$help")
+        cache_type_supported "${!name}" "$value" || return 0
+    done
     build_model_args
     estimator_args=("${MODEL_ARGS[@]}")
     # Estimate only layouts the helper can represent, including server-only
@@ -195,7 +201,8 @@ memory_line() {
 refresh_memory() {
     local key
     # Reuse expensive model planning until settings change; refresh free budgets.
-    key=$(printf '%s\n' "$SERVER" "$MODEL" "$CTX_SIZE" "$DEVICE" "$THREADS" "$GPU_LAYERS" "$PROMPT_PROCESSING" \
+    key=$(printf '%s\n' "$SERVER" "$MODEL" "$CTX_SIZE" "$DEVICE" "$THREADS" "$GPU_LAYERS" "$PROMPT_PROCESSING" "$CACHE_TYPE_K" "$CACHE_TYPE_V" \
+        "${LLAMA_ARG_FLASH_ATTN+x}:${LLAMA_ARG_FLASH_ATTN-}" \
         "${LLAMA_ARG_N_PARALLEL+x}:${LLAMA_ARG_N_PARALLEL-}" \
         "${LLAMA_ARG_KV_UNIFIED+x}:${LLAMA_ARG_KV_UNIFIED-}" \
         "${LLAMA_ARG_NO_KV_UNIFIED+x}:${LLAMA_ARG_NO_KV_UNIFIED-}")

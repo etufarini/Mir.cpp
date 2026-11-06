@@ -146,7 +146,7 @@ exec /bin/rm "$@"
     model.touch()
     server_dir = work / 'llama.cpp'
     executable(server_dir / 'build/bin/llama-server', '''#!/usr/bin/env bash
-if [[ ${1:-} == --help ]]; then echo '--model --port'; exit 0; fi
+if [[ ${1:-} == --help ]]; then echo '--model --port --cache-type-k --cache-type-v'; exit 0; fi
 printf '%s\\0' "$@" > "$TEST_ARGS"
 ''')
     result = subprocess.run([str(command), str(model), '--alias', 'two words'],
