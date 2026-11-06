@@ -12,7 +12,7 @@ main() {
         exec "$RUNTIME_BASH" -c "$(declare -f detect_platform configure_runtime bootstrap_macos macos_dependency_hint macos_install_packages load_platform check_dependencies runtime_files main)"$'\nmain "$@"' mir-installer "$@"
     fi
     load_platform "$PLATFORM_ID"
-    platform_install_dependencies || exit 1
+    platform_ensure_dependencies launcher || exit 1
     BROWSER=$(platform_browser_command)
     if ! command -v "$BROWSER" >/dev/null; then
         printf 'WARNING: %s is missing; automatic browser opening will be unavailable.\nOpen the server address manually.\n' "$BROWSER" >&2
@@ -64,8 +64,7 @@ main() {
         --output "$STAGE/source.tar.gz" 9>&-
 
     # Extract only the runtime files and documentation, never arbitrary archive paths.
-    FILES=()
-    while IFS= read -r file; do FILES+=("$file"); done < <(runtime_files)
+    mapfile -t FILES < <(runtime_files)
     MEMBERS=()
     for file in "${FILES[@]}"; do MEMBERS+=("Mir.cpp-main/mir/$file"); done
     # Keep the installed runtime flat so the stable wrapper also works on rollback.

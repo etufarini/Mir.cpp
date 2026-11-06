@@ -17,19 +17,18 @@ profile_status() {
 }
 
 load_profile() {
-    local file="$1" key value line
+    local file="$1" key line
     [[ -r "$file" ]] || return 1
     local -A settings=()
     while IFS= read -r line || [[ -n "$line" ]]; do
         [[ "$line" == *=* ]] || return 1
         key="${line%%=*}"
-        value="${line#*=}"
         case "$key" in
             model|context|reasoning|port|device|threads|gpu_layers|prompt_processing|temperature|top_p|top_k|min_p|repeat_penalty|presence_penalty|frequency_penalty|seed|max_tokens) ;;
             *) return 1 ;;
         esac
         [[ ! -v "settings[$key]" ]] || return 1
-        settings[$key]="$value"
+        settings[$key]="${line#*=}"
     done < "$file"
     # Legacy profiles contain eight fields. New profiles require the full block.
     if (( ${#settings[@]} == 8 )); then

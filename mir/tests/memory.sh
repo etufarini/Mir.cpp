@@ -30,7 +30,7 @@ printf '%s\0' "$@" >> "$MEMORY_TEST_WORK/args"
 if [[ "${*: -1}" == off ]]; then
     [[ ! -f "$MEMORY_TEST_WORK/fit-failed" ]] || exit 1
     if [[ -f "$MEMORY_TEST_WORK/malformed" ]]; then echo 'unexpected output';
-    else echo '-c 4096 -ngl -1'; fi
+    else printf '%s\n' "${MEMORY_TEST_FIT--c 4096 -ngl -1}"; fi
 else
     echo 'Accelerator0 7000 1000 192'
     echo 'Host 512 256 256'
@@ -90,6 +90,29 @@ memory_estimate
 rm "$work/duplicates"
 memory_estimate
 [[ ${#MEMORY_NAMES[@]} == 2 ]]
+
+# Preserve every fitted pair and strip only the tensor override's outer quotes.
+export MEMORY_TEST_FIT='-c 4096 -ngl -1 -ts 1,2 -ot "blk.*=CPU"'
+: > "$work/args"
+memory_estimate
+[[ ${#MEMORY_NAMES[@]} == 2 ]]
+python3 - "$work/args" <<'PYARGS'
+import sys
+from pathlib import Path
+args = Path(sys.argv[1]).read_bytes().split(b'\0')[:-1]
+assert args[-10:] == [b'-c', b'4096', b'-ngl', b'-1', b'-ts', b'1,2',
+                      b'-ot', b'blk.*=CPU', b'--fit-print', b'on'], args
+PYARGS
+# Invalid fitting output must never reach the allocation-measurement call.
+for MEMORY_TEST_FIT in '' '-c' '-c 4096 -ngl' '-c bad' '-ngl all' '-ts 1,,2' '-ot ""' '-ot "bad"quote' '-unknown 1' $'-c 4096\n-ngl -1'; do
+    : > "$work/args"
+    memory_estimate
+    [[ ${#MEMORY_NAMES[@]} == 0 ]]
+    mapfile -d '' -t planner_args < "$work/args"
+    [[ ${planner_args[-1]} == off ]]
+done
+unset MEMORY_TEST_FIT
+printf 'PASS: fitted argument pairs, tensor override quotes and rejected malformed planner output\n'
 
 # A planner without unified KV support must not estimate an automatic server.
 export MEMORY_TEST_SERVER_HELP='number of server slots (default: -1, -1 = auto)'

@@ -74,8 +74,6 @@ platform_listeners() {
     fi
 }
 
-platform_install_dependencies() { platform_ensure_dependencies launcher; }
-
 platform_ensure_dependencies() {
     local group=$1 index tool
     local -a tools=() formulas=() missing=()

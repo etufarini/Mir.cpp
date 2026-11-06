@@ -21,10 +21,10 @@ platform_timeout() {
 platform_memory_style() { printf margins; }
 # shellcheck disable=SC2034 # RAM_AVAILABLE is an output consumed by shared memory code.
 platform_memory_snapshot() {
-    local key value rest
+    local key value _
     RAM_AVAILABLE=''
     if [[ -r /proc/meminfo ]]; then
-        while read -r key value rest; do
+        while read -r key value _; do
             if [[ "$key" == MemAvailable: && "$value" =~ ^[0-9]+$ ]]; then RAM_AVAILABLE=$((value / 1024)); break; fi
         done < /proc/meminfo
     fi
@@ -141,5 +141,3 @@ platform_build_flags() {
 }
 platform_start_worker() { exec setsid "$@"; }
 platform_build_probe() { timeout --foreground --kill-after=2 30 "$@"; }
-
-platform_install_dependencies() { platform_ensure_dependencies launcher; }

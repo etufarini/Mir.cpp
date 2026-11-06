@@ -77,7 +77,7 @@ install_build() {
 }
 
 dependency_terminal() (
-    local terminal_fd result=0 answer clear_screen=$'\033[0m\033[2J\033[H'
+    local terminal_fd result=0 _ clear_screen=$'\033[0m\033[2J\033[H'
     exec {terminal_fd}<> /dev/tty || return 1
     # Leave no dialog or command output behind, including on interruption.
     trap 'printf "%s" "$clear_screen" >&"$terminal_fd"' EXIT
@@ -86,7 +86,7 @@ dependency_terminal() (
     printf '%s' "$clear_screen" >&"$terminal_fd"
     "$@" <&"$terminal_fd" >&"$terminal_fd" 2>&1 || result=$?
     printf '\nPress Enter to return to Mir.cpp. ' >&"$terminal_fd"
-    IFS= read -r -u "$terminal_fd" answer || true
+    IFS= read -r -u "$terminal_fd" _ || true
     return "$result"
 )
 
