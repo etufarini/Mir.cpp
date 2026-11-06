@@ -20,12 +20,9 @@ platform_timeout() {
     command -v "$timer" >/dev/null || return 1
     "$timer" --kill-after=1 "$@" 2>/dev/null
 }
-# Apple Silicon uses one physical pool for native CPU/Metal allocations.
-# Other Macs expose system RAM only; accelerator forecasts remain unknown.
-platform_memory_style() {
-    if [[ $(sysctl -n hw.optional.arm64 2>/dev/null) == 1 ]]; then printf shared;
-    else printf system; fi
-}
+platform_memory_style() { printf system; }
+platform_multi_gpu_ui() { return 1; }
+platform_gpu_build_note() { printf 'Metal uses the GPU support included in macOS.'; }
 # shellcheck disable=SC2034 # RAM_AVAILABLE is consumed by shared memory code.
 platform_memory_snapshot() {
     local output line page_size='' free='' inactive='' speculative='' name value

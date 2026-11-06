@@ -9,7 +9,7 @@ server_capabilities() {
 
 supports_option() {
     local pattern="(^|[[:space:],])$1([[:space:]=,]|$)"
-    [[ "${2-$SERVER_HELP}" =~ $pattern ]]
+    [[ "$SERVER_HELP" =~ $pattern ]]
 }
 
 split_modes() {
@@ -58,15 +58,50 @@ listed_value() {
 }
 
 server_devices() {
-    local line
+    local line name description total available
     DEVICE_NAMES=(); DEVICE_DESCRIPTIONS=()
+    GPU_DEVICE_NAMES=()
+    declare -gA DEVICE_FREE=()
     DEVICE_OUTPUT=$(platform_timeout 15 "$SERVER" --list-devices) || return 1
     while IFS= read -r line; do
         if [[ "$line" =~ ^[[:space:]]+([^[:space:]:]+):[[:space:]]+(.+)$ ]]; then
             DEVICE_NAMES+=("${BASH_REMATCH[1]}")
             DEVICE_DESCRIPTIONS+=("${BASH_REMATCH[2]}")
+            name=${BASH_REMATCH[1]}; description=${BASH_REMATCH[2]}
+            # Native device lists may include CPU accelerators with no GPU pool.
+            if [[ "$name" =~ ^[a-zA-Z0-9_.-]+$ && "$description" =~ \(([0-9]{1,10})[[:space:]]MiB,[[:space:]]([0-9]{1,10})[[:space:]]MiB[[:space:]]free\)$ ]]; then
+                total=$((10#${BASH_REMATCH[1]})); available=$((10#${BASH_REMATCH[2]}))
+                if (( total > 0 && available <= total )) && [[ ! -v "DEVICE_FREE[$name]" ]]; then
+                    GPU_DEVICE_NAMES+=("$name")
+                    DEVICE_FREE[$name]=$available
+                fi
+            fi
         fi
     done <<< "$DEVICE_OUTPUT"
+}
+
+multi_gpu_available() {
+    platform_multi_gpu_ui && (( ${#GPU_DEVICE_NAMES[@]} >= 2 ))
+}
+
+gpu_settings_active() {
+    multi_gpu_available || return 1
+    local device=${DEVICE:-auto} name
+    local -a selected
+    local -A unique=()
+    if [[ "$device" == auto ]]; then device=${LLAMA_ARG_DEVICE:-auto}; fi
+    [[ "$device" != auto ]] || return 0
+    IFS=, read -r -a selected <<< "$device"
+    for name in "${selected[@]}"; do
+        [[ " ${GPU_DEVICE_NAMES[*]} " == *" $name "* ]] || return 1
+        unique[$name]=1
+    done
+    (( ${#unique[@]} >= 2 ))
+}
+
+refresh_gpu_settings() {
+    GPU_SETTINGS_ACTIVE=false
+    if platform_multi_gpu_ui && server_devices && gpu_settings_active; then GPU_SETTINGS_ACTIVE=true; fi
 }
 
 launch_error() { LAUNCH_ERROR=$*; return 1; }
@@ -157,10 +192,11 @@ prepare_server() {
     [[ -f "$SERVER" && -x "$SERVER" ]] || { launch_error 'llama-server not found. Set the llama.cpp folder in Folders, or use MIR_LLAMA_CPP_DIR.'; return 1; }
     [[ -z "$PATHS_WARNING" || "$TUI" == true ]] || printf '%s\n' "$PATHS_WARNING" >&2
     [[ -f "$MODEL" && -r "$MODEL" ]] || { launch_error "GGUF model missing or unreadable: $MODEL"; return 1; }
+    if "$TUI"; then refresh_gpu_settings; fi
     build_model_args
     ARGS=("${MODEL_ARGS[@]}" --port "$PORT")
     if [[ -n "$SERVER_HOST" ]]; then ARGS+=(--host "$SERVER_HOST"); fi
-    # Sampling belongs to server defaults, never to the memory planner.
+    # Sampling sets server defaults; browser requests may override them.
     for key in "${GENERATION_KEYS[@]}"; do
         [[ "${GENERATION[$key]}" != auto ]] || continue
         flag=${key//_/-}
@@ -227,7 +263,7 @@ build_model_args() {
     if [[ "$DEVICE" != auto ]]; then MODEL_ARGS+=(--device "$DEVICE"); fi
     if [[ "$DEVICE" == none ]]; then MODEL_ARGS+=(--gpu-layers 0);
     elif [[ "$GPU_LAYERS" != auto ]]; then MODEL_ARGS+=(--gpu-layers "$GPU_LAYERS"); fi
-    if [[ "$DEVICE" != none ]]; then
+    if [[ "$DEVICE" != none ]] && { ! "$TUI" || "$GPU_SETTINGS_ACTIVE"; }; then
         for setting in SPLIT_MODE TENSOR_SPLIT FIT_TARGET; do
             flag=${setting,,}; flag=${flag//_/-}
             if [[ "${!setting}" != auto ]]; then MODEL_ARGS+=("--$flag" "${!setting}"); fi

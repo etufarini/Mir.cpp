@@ -19,6 +19,8 @@ platform_timeout() {
     timeout --kill-after=1 "$@" 2>/dev/null
 }
 platform_memory_style() { printf margins; }
+platform_multi_gpu_ui() { return 0; }
+platform_gpu_build_note() { printf 'GPU builds require working drivers, configured separately.'; }
 # shellcheck disable=SC2034 # RAM_AVAILABLE is an output consumed by shared memory code.
 platform_memory_snapshot() {
     local key value _

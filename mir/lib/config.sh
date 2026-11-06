@@ -134,9 +134,9 @@ initialize_config() {
     done
     read_launcher_control SERVER_HOST HOST "${LLAMA_HOST:-}"
     PROFILES_DIR="$CONFIG_DIR/profiles"
-    declare -ga MEMORY_NAMES=() MEMORY_MIB=()
+    declare -ga GPU_DEVICE_NAMES=()
     declare -gA DEVICE_FREE=()
-    MEMORY_KEY=""
+    GPU_SETTINGS_ACTIVE=false
     MEMORY_PAGE=0
     declare -ga MEMORY_BUTTONS=()
     CURRENT_PROFILE=""

@@ -58,11 +58,15 @@ UI_TITLE='Geometry check'
         if widget:
             height, width = {'devices':(20,80), 'gpu':(18,80), 'performance':(19,80)}[widget]
             code += '''source "$1/lib/config.sh"
+source "$1/lib/server.sh"
 source "$1/lib/tui/settings.sh"
 TRACE_FILE=$2
 dialog() { command dialog --trace "$TRACE_FILE" "$@"; }
 server_capabilities() { :; }
+platform_multi_gpu_ui() { return 0; }
+server_devices() { GPU_DEVICE_NAMES=(Accelerator0 Accelerator1); }
 DEVICE=Accelerator1,Accelerator0
+GPU_DEVICE_NAMES=(Accelerator0 Accelerator1)
 DEVICE_NAMES=(Accelerator0 Accelerator1)
 DEVICE_DESCRIPTIONS=('First GPU' 'Second GPU')
 FIT_TARGET=auto SPLIT_MODE=auto TENSOR_SPLIT=auto

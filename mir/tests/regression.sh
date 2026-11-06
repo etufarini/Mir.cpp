@@ -250,13 +250,13 @@ load_paths
     generation_checks = r'''
 initialize_config "$2"
 build_model_args
-planner_args=$(printf '%s\n' "${MODEL_ARGS[@]}")
+model_args=$(printf '%s\n' "${MODEL_ARGS[@]}")
 set_generation_preset focused
 GENERATION[seed]=7 GENERATION[max_tokens]=2048
 set_generation_preset min-p
 [[ $(generation_preset) == min-p && ${GENERATION[seed]} == 7 && ${GENERATION[max_tokens]} == 2048 ]]
 build_model_args
-[[ $(printf '%s\n' "${MODEL_ARGS[@]}") == "$planner_args" ]]
+[[ $(printf '%s\n' "${MODEL_ARGS[@]}") == "$model_args" ]]
 write_profile "$PROFILES_DIR/Generation.conf"
 (( $(wc -l < "$PROFILES_DIR/Generation.conf") == 21 ))
 saved=$(profile_data)
@@ -290,7 +290,7 @@ generation_menu
 rm "$PROFILES_DIR/Generation.conf" "$PROFILES_DIR/Invalid.conf"
 '''
     subprocess.run(['bash','-euo','pipefail','-c',sources+generation_checks,'test',str(root),str(model)],env=env,check=True)
-    print('PASS: current profile saves, Modified tracking, rollback, cancellation and planner isolation')
+    print('PASS: current profile saves, Modified tracking, rollback, cancellation and model argument isolation')
 
     flexible_profiles = r'''
 initialize_config "$2"
@@ -382,10 +382,9 @@ DEVICE=$(printf 'Accelerator%.0s' {1..12})
 CURRENT_PROFILE="$PROFILES_DIR/$(printf 'Profile%.0s' {1..10}).conf"
 SAVED_PROFILE='different settings'
 PORT_STATUS=$'Port 9931: IN USE\n123 user server'
-printf -v MEMORY_TEXT '%-72s' 'Est. free GiB: RAM 16.3 | GPU 1.5'
 before=$(profile_data)
 mapfile -t lines < <(configuration_summary)
-[[ ${#lines[@]} == 6 && ${lines[0]} == *'(Modified)' ]]
+[[ ${#lines[@]} == 5 && ${lines[0]} == *'(Modified)' ]]
 [[ ${lines[1]} == *'...'*model.gguf && ${lines[2]} == 'Context       4K' ]]
 [[ ${lines[3]} == Device* && ${lines[4]} == 'Port          9931: IN USE' ]]
 for line in "${lines[@]}"; do (( ${#line} <= 72 )); done
@@ -507,7 +506,7 @@ initialize_config "$2"
         assert 'View log' in log and 'Ready' in log
         if launcher == root / 'mir.sh':
             assert 'MIR.CPP / STATION CONTROL' in log and 'Status     Ready' in log
-            assert 'Est. free: unavailable' in log
+            assert 'Est. free' not in log
             assert 'Free GiB:' in log, log
             dialogs = [json.loads(line) for line in log.splitlines()]
             for args in dialogs:
@@ -533,7 +532,7 @@ initialize_config "$2"
                 assert args[args.index('--title')+1] == ' Main menu '
                 index = args.index('--menu')
                 assert args[index+5::2] == ['launch','model','performance','server','configurations','paths','quit']
-                assert len(args[index+1].splitlines()) == 6
+                assert len(args[index+1].splitlines()) == 5
             assert any('--msgbox' in args and ' Port process details ' in args and '--scrollbar' in args for args in dialogs)
             assert any('--msgbox' in args and ' Information ' in args for args in dialogs)
             assert all(args[args.index('--title')+1] == ' Server log ' and '--exit-label' in args

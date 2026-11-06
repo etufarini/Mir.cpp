@@ -88,7 +88,7 @@ sys.exit(status)
     env = {k:v for k,v in os.environ.items() if not k.startswith(('LLAMA_', 'MIR_'))}
     env.update(PATH=str(commands) + ':' + env['PATH'], XDG_CONFIG_HOME=str(work / 'config'),
                MIR_LLAMA_CPP_DIR=str(server_dir), MIR_MODELS_DIR=str(models),
-               TEST_HELP=help_text, TEST_DEVICES='Available devices:\n  Vulkan0: First GPU\n  Vulkan1: Second GPU',
+               TEST_HELP=help_text, TEST_DEVICES='Available devices:\n  Vulkan0: First GPU (16384 MiB, 8192 MiB free)\n  Vulkan1: Second GPU (8192 MiB, 4096 MiB free)',
                TEST_ARGS=str(work / 'args'), TEST_PORTS=str(work / 'ports'),
                TEST_CURL=str(work / 'curl'), TEST_BROWSER=str(work / 'browser'),
                TEST_QUEUE=str(work / 'queue'))
@@ -206,7 +206,7 @@ ui() { printf '%s\\n' "$@" > "$TEST_ARGS"; printf 'Vulkan1\\nVulkan0'; }
 select_multiple_devices
 [[ $DEVICE == Vulkan1,Vulkan0 ]]
 mapfile -t options < "$TEST_ARGS"
-[[ " ${options[*]} " == *' Vulkan1 Vulkan1: Second GPU on Vulkan0 Vulkan0: First GPU on '* ]]
+[[ " ${options[*]} " == *' Vulkan1 Vulkan1: Second GPU '*' on Vulkan0 Vulkan0: First GPU '*' on '* ]]
 ''')
     (work / 'queue').write_text(json.dumps([[0,'mode'],[0,'row'],[0,'proportions'],[0,'2,1'],[0,'margin'],[0,'2048,1024'],[0,'back']]))
     check('''initialize_config "$2"
@@ -235,12 +235,60 @@ gpu_memory_menu
 ''', {'TEST_HELP':'--model FNAME\n--port PORT'})
     check('''initialize_config "$2"
 DEVICE=Vulkan0
-ui() { printf '%s\\n' "$@" > "$TEST_ARGS"; return 255; }
+ui() { return 99; }
 gpu_memory_menu
-args=$(cat "$TEST_ARGS")
-[[ $args == *'Memory margin'* && $args != *'Split mode'* && $args != *'GPU proportions'* ]]
+[[ $GPU_SETTINGS_ACTIVE == false ]]
 ''')
     print('PASS: multi-GPU checklist order/cancellation, advanced menus, single-device visibility and atomic profile tracking')
+
+
+    # Visibility follows platform capability and usable native memory reports.
+    for devices, expected in [
+        ('Available devices:\n  (none)', 'false'),
+        ('Available devices:\n  GPU0: One GPU (8192 MiB, 4096 MiB free)', 'false'),
+        ('Available devices:\n  GPU0: One GPU (8192 MiB, 4096 MiB free)\n  BLAS: CPU accelerator (0 MiB, 0 MiB free)', 'false'),
+        ('Available devices:\n  GPU0: One GPU (8192 MiB, 4096 MiB free)\n  GPU1: Unknown memory', 'false'),
+        ('Available devices:\n  GPU0: One GPU (8192 MiB, 4096 MiB free)\n  GPU0: Duplicate (8192 MiB, 4096 MiB free)', 'false'),
+        ('Available devices:\n  GPU0: One GPU (8192 MiB, 4096 MiB free)\n  GPU1: Second GPU (8192 MiB, 4096 MiB free)', 'true')]:
+        check('''initialize_config "$2"
+TUI=true SPLIT_MODE=layer TENSOR_SPLIT=2,1 FIT_TARGET=2048
+before=$(profile_data)
+ui() { printf '%s\\n' "$@" > "$TEST_ARGS"; return 255; }
+performance_menu
+[[ $GPU_SETTINGS_ACTIVE == "$TEST_EXPECT" ]]
+options=$(cat "$TEST_ARGS")
+if "$TEST_EXPECT"; then [[ $options == *'GPU memory'* ]]; else [[ $options != *'GPU memory'* ]]; fi
+select_device
+options=$(cat "$TEST_ARGS")
+if "$TEST_EXPECT"; then [[ $options == *'Select multiple devices'* ]]; else [[ $options != *'Select multiple devices'* ]]; fi
+prepare_server
+if "$TEST_EXPECT"; then
+    [[ " ${ARGS[*]} " == *' --split-mode layer '* ]]
+else
+    [[ " ${ARGS[*]} " != *' --split-mode '* && " ${ARGS[*]} " != *' --tensor-split '* && " ${ARGS[*]} " != *' --fit-target '* ]]
+fi
+[[ $(profile_data) == "$before" ]]
+''', {'TEST_DEVICES':devices, 'TEST_EXPECT':expected})
+    check('''initialize_config "$2"
+TUI=true DEVICE=Vulkan0 SPLIT_MODE=layer TENSOR_SPLIT=2,1 FIT_TARGET=2048
+prepare_server
+[[ $GPU_SETTINGS_ACTIVE == false && " ${ARGS[*]} " != *' --split-mode '* ]]
+DEVICE=Vulkan0,Vulkan0
+refresh_gpu_settings
+[[ $GPU_SETTINGS_ACTIVE == false ]]
+DEVICE=none
+refresh_gpu_settings
+[[ $GPU_SETTINGS_ACTIVE == false ]]
+''')
+    check('''initialize_config "$2"
+TUI=true
+ui() { printf '%s\\n' "$@" > "$TEST_ARGS"; return 255; }
+performance_menu
+[[ $GPU_SETTINGS_ACTIVE == false ]]
+options=$(cat "$TEST_ARGS")
+[[ $options != *'GPU memory'* ]]
+''', {'TEST_DEVICE_EXIT':'1'})
+    print('PASS: zero/one/two devices, CPU accelerators, unknown/duplicate reports, discovery failure and inactive TUI profile values')
 
     # The installed build's help is the authority; never reuse draft-cache lists.
     check(r'''initialize_config "$2"

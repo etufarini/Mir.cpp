@@ -103,7 +103,7 @@ choose_build() {
     mapfile -t backends < <(platform_build_backends)
     (( ${#backends[@]} > 0 )) || { message 'Managed llama.cpp builds are not available on this platform yet. Select an existing build in Folders.'; return 0; }
     if read_build "$LLAMA_CPP_PATH"; then backend=$BUILD_BACKEND; fi
-    backend=$(menu --default-item "$backend" --menu 'Choose the backend to compile. GPU builds require working drivers.\nCPU remains available in GPU builds.' 15 80 4 \
+    backend=$(menu --default-item "$backend" --menu "Choose the backend to compile. CPU remains available in GPU builds.\n$(platform_gpu_build_note)" 15 80 4 \
         "${backends[@]}" back Back) || return 0
     [[ "$backend" != back ]] || return 0
     prepare_build_dependencies "$backend" || return 0
@@ -133,7 +133,7 @@ build_menu() {
     while true; do
         summary='Using an external build, or no build selected.'
         if read_build "$LLAMA_CPP_PATH"; then summary="Selected: $BUILD_TAG ($BUILD_BACKEND)\nCommit: ${BUILD_COMMIT:0:12}"; fi
-        action=$(menu --default-item "$action" --menu "$summary\n\nBuilds are installed for your user. GPU drivers are configured separately." 19 80 5 \
+        action=$(menu --default-item "$action" --menu "$summary\n\nBuilds are installed for your user.\n$(platform_gpu_build_note)" 19 80 5 \
             install 'Install / change build' update 'Check for updates' restore 'Restore previous build' log 'View build log' back Back) || return 0
         case "$action" in
             install) choose_build ;;

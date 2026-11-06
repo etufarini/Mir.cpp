@@ -58,7 +58,7 @@ elif [[ ${TEST_NO_UI:-0} == 0 ]]; then echo '<html>fixture</html>' > "$target/to
     executable('cmake', '''#!/usr/bin/env bash
 printf '%s\\0' "$@" >> "$TEST_WORK/cmake.args"
 [[ ${TEST_CMAKE_FAIL:-0} == 0 ]] || exit 1
-if [[ $* == *'--target help'* ]]; then echo '... llama-server'; echo '... llama-fit-params'; exit; fi
+if [[ $* == *'--target help'* ]]; then exit 99; fi
 if [[ ${1:-} == -S ]]; then
     mkdir -p "$4/bin"
     cat > "$4/bin/llama-server" <<'SERVER'
@@ -137,14 +137,15 @@ install_build b2 "$TEST_GPU" 2
 read_build "$LLAMA_CPP_PATH"
 [[ $BUILD_TAG == b2 && $BUILD_BACKEND == "$TEST_GPU" && $BUILD_PREVIOUS == "${first##*/}" ]]
 second=$LLAMA_CPP_PATH
-CAPABILITIES_SERVER=old; MEMORY_KEY=old
+CAPABILITIES_SERVER=old
 activate_build "$first"
-[[ $LLAMA_CPP_PATH == "$first" && -z $CAPABILITIES_SERVER && -z $MEMORY_KEY ]]
+[[ $LLAMA_CPP_PATH == "$first" && -z $CAPABILITIES_SERVER ]]
 activate_build "$second"
 [[ $LLAMA_CPP_PATH == "$second" ]]
 ''')
     assert ('-DGGML_' + gpu.upper() + '=ON\0').encode() in (work / 'cmake.args').read_bytes()
-    assert b'--target\0llama-fit-params\0' in (work / 'cmake.args').read_bytes()
+    assert b'--target\0llama-server\0' in (work / 'cmake.args').read_bytes()
+    assert b'--target\0help\0' not in (work / 'cmake.args').read_bytes()
     if adapter == 'linux':
         check('''stage=$(mktemp -d "$(build_root)/builds/build.XXXXXXXX")
     build_release "$stage" b2 cuda 2 ''

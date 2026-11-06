@@ -103,7 +103,7 @@ PY
 }
 
 build_release() {
-    local stage=$1 tag=$2 backend=$3 jobs=$4 previous=$5 commit devices targets line name accelerator=false
+    local stage=$1 tag=$2 backend=$3 jobs=$4 previous=$5 commit devices line name accelerator=false
     local -a flags=(-DCMAKE_BUILD_TYPE=Release -DLLAMA_BUILD_SERVER=ON
         -DLLAMA_BUILD_TESTS=OFF -DLLAMA_BUILD_EXAMPLES=OFF
         -DGGML_CUDA=OFF -DGGML_VULKAN=OFF)
@@ -127,12 +127,6 @@ build_release() {
     fi
     cmake -S "$stage/source" -B "$stage/build" "${flags[@]}" || return 1
     cmake --build "$stage/build" --config Release --target llama-server --parallel "$jobs" || return 1
-    # Keep optional memory planning when this upstream version provides it.
-    targets=$(cmake --build "$stage/build" --target help) || return 1
-    if [[ "$targets" == *llama-fit-params* ]]; then
-        cmake --build "$stage/build" --config Release --target llama-fit-params --parallel "$jobs" ||
-            printf 'WARNING: optional memory planner could not be built.\n'
-    fi
     [[ -x "$stage/build/bin/llama-server" ]] || return 1
     # Keep probes in the worker group so Cancel also stops a stalled driver probe.
     platform_build_probe "$stage/build/bin/llama-server" --version || return 1
@@ -171,5 +165,5 @@ activate_build() {
     LLAMA_CPP_PATH=$path
     if ! save_paths; then LLAMA_CPP_PATH=$previous; return 1; fi
     SERVER="$path/build/bin/llama-server"
-    CAPABILITIES_SERVER=''; MEMORY_KEY=''
+    CAPABILITIES_SERVER=''
 }

@@ -6,6 +6,8 @@ platform_dependency_hint() { printf 'Missing fixture commands: %s\n' "$*"; }
 platform_browser_command() { printf xdg-open; }
 platform_open_url() { xdg-open "$1"; }
 platform_memory_style() { printf margins; }
+platform_multi_gpu_ui() { return 0; }
+platform_gpu_build_note() { printf 'GPU builds require working drivers, configured separately.'; }
 platform_memory_snapshot() { RAM_AVAILABLE=${TEST_RAM_AVAILABLE:-16384}; }
 platform_timeout() {
     command -v timeout >/dev/null || return 1

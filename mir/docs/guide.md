@@ -57,7 +57,7 @@ submenu. **Quit** or **Esc** on the main screen exits. Menus remember the select
 entry and highlight the current value where available.
 
 The main screen shows the current configuration, model, context,
-device, port status and estimated free memory. Long names are shortened only for
+device and port status. Long names are shortened only for
 display. All seven actions fit an 80×24 terminal:
 
 | Menu | Purpose |
@@ -157,8 +157,7 @@ block activation; older releases use their bundled UI.
 **View log** shows build output. **Cancel build** or **Esc** asks before
 cancellation; a lock prevents concurrent managed builds. Before activation,
 Mir.cpp checks version/help, device discovery and Web UI assets. GPU builds
-require an accelerator. The optional `llama-fit-params` planner is also built when
-upstream provides it. These checks do not validate inference or model capacity.
+require an accelerator. These checks do not validate inference or model capacity.
 
 A successful build saves its path for TUI and direct startup. Failed or canceled
 builds preserve the previous selection. **Check for updates** offers the latest
@@ -207,9 +206,7 @@ require matching K/V types. No type or precision is silently substituted by
 Mir.cpp. Native compatibility errors remain available in **View log**; adjust the
 cache types or select another build before retrying.
 
-Cache choices persist in named configurations and are passed to the memory
-planner too. A planner that cannot advertise both selected types leaves estimates
-unavailable, without blocking launch or live memory readings.
+Cache choices persist in named configurations and are passed directly to the server.
 
 ### Performance
 
@@ -217,11 +214,11 @@ Start with **Auto** and **Default** under **Performance**:
 
 | Option | Behavior |
 | --- | --- |
-| Device | **Auto**, **CPU only**, a discovered device, or **Select multiple devices**. Auto can already use multiple GPUs. Space selects devices in the checklist; Enter applies, Back/Esc cancels. CPU only disables GPU layers. |
+| Device | **Auto**, **CPU only**, a discovered device, or **Select multiple devices** on Linux when at least two devices report usable memory. Auto can already use multiple GPUs. Space selects devices in the checklist; Enter applies, Back/Esc cancels. CPU only disables GPU layers. |
 | CPU threads | **auto** or 1–2147483647. More threads are not always faster. |
 | GPU layers | **auto**, **all**, or 0–2147483647. Auto leaves native defaults in effect; all can exceed memory. CPU only shows **Ignored (CPU only)** and retains the chosen value for other devices. |
 | Prompt processing | **Default** omits batch overrides. **Low memory** uses `--batch-size 512 --ubatch-size 128`; **Large batch** uses `--batch-size 2048 --ubatch-size 1024`. |
-| GPU memory | Advanced memory margin and, with multiple devices, split mode and relative GPU proportions. All default to **Auto**. |
+| GPU memory | Linux only, with multiple usable devices active or selected through Auto. Controls split mode, relative GPU proportions and memory margin; all default to **Auto**. |
 
 Batch sizes affect input processing, not the maximum answer length. Larger
 batches need more memory and do not guarantee faster generation. CPU and GPU can
@@ -247,11 +244,18 @@ leave room for other GPU applications:
   after changing devices. With Auto devices, use native `--list-devices` order.
 
 The checklist preserves the order of devices already selected. New devices follow
-discovery order. Device lists come directly from llama.cpp; some builds also list
-CPU accelerators. Distribution controls appear only when multiple devices are
-selected or discovered under Auto. CPU only keeps these settings saved but omits
-their launcher arguments. Unsupported options or advertised split modes are
-reported before launch; remaining runtime compatibility checks belong to llama.cpp.
+discovery order. The multi-device checklist is offered only on Linux when at least
+two distinct native device names report positive memory capacity with valid free
+memory. Entries with missing or zero memory, such as CPU accelerators, do not count.
+A failed probe keeps the new controls hidden. Native device lists cannot establish
+whether different backends expose the same physical GPU twice.
+
+The GPU memory panel is hidden on macOS, with CPU only, or when fewer than two
+eligible devices are active. Its saved values are preserved but omitted by the TUI
+when the panel is inactive. Direct startup and explicit native arguments remain
+available. Model/backend restrictions are checked by llama.cpp at startup; errors
+remain available through View log. Device selection, CPU threads, GPU layers,
+prompt processing and model settings remain available on macOS.
 
 Before launch, Mir.cpp checks requested controls against server help and checks
 explicit devices when discovery succeeds. Unsupported choices produce an error;
@@ -259,34 +263,22 @@ the TUI remains available for correction. Help/device probes have 15-second
 limits. Without GNU `timeout` (`gtimeout` on macOS), probes are skipped and the
 server reports startup errors. Auto and CPU only remain selectable.
 
-## Memory estimates
+## Live memory
 
-Before launch, a compact line shows estimated remaining memory, for example
-`Est. free GiB: RAM 16.3 | GPU 1.5`. While running it shows **Free GiB**.
-Negative estimates indicate a predicted shortfall; **N/A** means unknown.
-On Linux, **+N** indicates pools available through **Next memory**.
+The running server screen shows **Free GiB**. On Linux it reports available system
+RAM and native device memory; **+N** indicates pools available through **Next memory**.
+Device numbers follow discovery order. CPU only shows **GPU off**. Missing or
+malformed measurements show **N/A** and never block server controls.
 
-Forecasts require `llama-fit-params` beside the server, bounded commands and a
-planner capable of reproducing effective server slots and KV-cache layout,
-including native environment overrides. They include model, context/state and
-compute allocations without running inference. Unsupported or malformed output
-leaves the forecast unavailable and never blocks launch. Linux may show
-**Est. free: unavailable**; live readings remain independent.
+On macOS the line shows approximate available system RAM with a `~` marker, using
+native `vm_stat` free, inactive and speculative pages and the reported page size,
+following [psutil's available-memory calculation](https://github.com/giampaolo/psutil/blob/master/psutil/arch/osx/mem.c).
+A separate Metal probe's process-local allocation margin is not used as system RAM.
 
-Linux uses available system RAM and device reports. macOS shows approximate
-system RAM with a `~` marker, using native `vm_stat` free, inactive and speculative
-pages and the reported page size, following
-[psutil's available-memory calculation](https://github.com/giampaolo/psutil/blob/master/psutil/arch/osx/mem.c).
-On Apple Silicon, CPU/Metal allocations are subtracted once from shared RAM.
-On other Macs, forecasts involving separate accelerator memory show **N/A**.
-GPU probes are never treated as system-wide available RAM on macOS.
-
-Estimates refresh after configuration changes and remain advisory. Reclaimable
-memory, placement, memory mapping, runtime overhead, projectors and extra server
-arguments can differ from the plan. They do not guarantee that a model fits or
-prevent swapping. The compact line omits RSS, pressure, swap, total RAM and device
-budgets; no utilization monitoring, conversation recording or telemetry uploads
-are performed.
+The line is informational and does not guarantee a model will fit or prevent
+swapping. It omits RSS, pressure, swap, total RAM and device budgets. No utilization
+monitoring, conversation recording or telemetry uploads are performed. llama.cpp
+retains its own automatic memory fitting during startup.
 
 ## Generation settings
 
@@ -415,7 +407,7 @@ launcher argument and leaves native settings in effect; explicit trailing
 arguments still win. Empty values are invalid. Margin integers and the integer
 part of each proportion are limited to 2147483647; proportions accept up to nine
 decimal places. These controls are also saved in profiles; older profiles load
-them as Auto. For two discovered devices:
+them as Auto. The TUI omits them when the GPU memory panel is inactive. For two discovered devices:
 
 ```bash
 MIR_DEVICE=CUDA0,CUDA1 MIR_TENSOR_SPLIT=2,1 MIR_FIT_TARGET=2048 \
@@ -458,7 +450,7 @@ launcher choices. Use them for capabilities beyond the menus, such as
 `--mmproj /path/to/projector.gguf`, `--embedding` or `--rerank` with a suitable
 model and build. Follow the model author's component and template requirements;
 these options are not inferred from filenames or saved in profiles. Sampling
-arguments are excluded from memory planning.
+arguments are excluded from live memory telemetry.
 
 Legacy `LLAMA_*` launcher aliases remain supported: replace the `MIR_` prefix
 with `LLAMA_`, except `MIR_LLAMA_CPP_DIR` maps to `LLAMA_CPP_DIR` and the cache
@@ -522,7 +514,7 @@ partial removal.
 - **Menu missing or clipped:** use a terminal, install `dialog` and allow at least 80×24 characters.
 - **No models found:** check **Folders → Models folder** for GGUF files, including subfolders.
 - **llama-server missing:** select a compiled llama.cpp folder or use **Install / update llama.cpp**. Direct startup can use `MIR_LLAMA_CPP_DIR`.
-- **Build failed:** inspect **View build log**, network access, disk/RAM, developer packages and GPU drivers. Try fewer compiler jobs or another published tag. The previous selection remains active.
+- **Build failed:** inspect **View build log**, network access, disk/RAM, developer packages and GPU setup. Try fewer compiler jobs or another published tag. The previous selection remains active.
 - **Model fails to load:** inspect **View log**, check llama.cpp model support and try a smaller context or model.
 - **Device error:** check the selected server with `/path/to/llama.cpp/build/bin/llama-server --list-devices` (or `bin/llama-server` for package layouts). For Vulkan, also check `vulkaninfo --summary`. Try **Auto** or **CPU only** under **Performance**.
 
@@ -538,7 +530,7 @@ paths resolve from `MIR_ROOT`. Never recursively source every shell file.
 | `lib/runtime.sh`, `platform.sh` | Bootstrap, adapter selection and dependency checking. |
 | `lib/platform/` | OS tools, listeners, browser, discovery, memory, atomic moves and build services. |
 | `lib/config.sh`, `paths.sh`, `profiles.sh` | Controls, model discovery and persistence. |
-| `lib/server.sh`, `processes.sh`, `memory.sh` | Arguments, lifecycle, listener safety and memory planning. |
+| `lib/server.sh`, `processes.sh`, `memory.sh` | Arguments, lifecycle, listener safety and live memory telemetry. |
 | `lib/build.sh`, `lib/gguf.py` | Managed releases and optional GGUF metadata filtering. |
 | `lib/tui/`, `dialogrc` | Navigation, terminal geometry and theme. |
 | `tests/helpers/`, `tests/platform/`, `tests/native/` | Isolated helpers, adapter fixtures and real OS checks. |
@@ -547,15 +539,17 @@ Modules define functions without side effects on import. Shared logic does not
 choose OS commands, invoke Homebrew or parse native process data. Adapters expose
 `platform_required_tools`, `platform_dependency_hint`, `platform_browser_command`,
 `platform_open_url`, `platform_find_models`, `platform_move`, `platform_timeout`,
-`platform_memory_style`, `platform_memory_snapshot` and `platform_listeners`.
+`platform_memory_style`, `platform_memory_snapshot`, `platform_multi_gpu_ui` and
+`platform_listeners`.
 Build services are `platform_build_backends`, `platform_build_flags`,
-`platform_start_worker`, `platform_build_probe` and `platform_ensure_dependencies`.
+`platform_start_worker`, `platform_build_probe`, `platform_gpu_build_note` and
+`platform_ensure_dependencies`.
 
 Call state-returning services in the current shell: listeners set `LISTENERS` and
 `PIDS`; memory snapshots set `RAM_AVAILABLE` in MiB (empty means unknown, zero is a
 valid measurement). Memory styles are `margins` for separate RAM/device pools,
-`shared` for one physical pool and `system` for RAM-only forecasts. Planning and
-pagination stay shared. Listener inspection failures return failure; missing
+`system` for approximate RAM-only readings. Telemetry formatting and pagination
+stay shared. Listener inspection failures return failure; missing
 optional probes do not block startup. Atomic moves accept source, destination
 and `replace` or `no-clobber`. `load_platform` accepts `linux` or `macos` and rejects
 mixing adapters.

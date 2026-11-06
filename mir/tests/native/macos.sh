@@ -189,7 +189,7 @@ load_test_core macos
 platform_memory_snapshot
 [[ "$RAM_AVAILABLE" =~ ^[0-9]+$ ]]
 (( RAM_AVAILABLE <= $(sysctl -n hw.memsize) / 1048576 ))
-[[ $(platform_memory_style) == shared || $(platform_memory_style) == system ]]
+[[ $(platform_memory_style) == system ]]
 '''
     result = subprocess.run([modern, '-euo', 'pipefail', '-c', snapshot_code, 'test', str(root)],
                             capture_output=True, text=True, timeout=10)

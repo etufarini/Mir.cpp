@@ -22,7 +22,7 @@ CUDA still needs validation on NVIDIA hardware. The name comes from the Mir spac
 - On macOS: [Homebrew](https://brew.sh/). The installer starts with the system
   Bash and offers to install compatible Bash and missing launcher dependencies.
 - At least one GGUF model supported by llama.cpp, with enough RAM or GPU memory.
-  Model downloads and GPU drivers are configured separately.
+  Model downloads and any required GPU drivers are configured separately.
 
 The installer asks before installing missing dependencies through apt on
 Ubuntu/Debian or Homebrew on macOS. Only apt operations may require sudo.

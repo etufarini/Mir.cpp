@@ -73,22 +73,29 @@ generation_menu() {
 }
 
 select_device() {
-    local choice i UI_TITLE=Device
+    local choice i hint='Choose a device supported by your llama.cpp build.' UI_TITLE=Device
     local -a options=(auto 'Auto: let llama.cpp choose' none 'CPU only')
     if [[ -f "$SERVER" && -x "$SERVER" ]] && server_devices; then
         for i in "${!DEVICE_NAMES[@]}"; do options+=("${DEVICE_NAMES[i]}" "${DEVICE_DESCRIPTIONS[i]}"); done
-        if (( ${#DEVICE_NAMES[@]} > 1 )); then options+=(multiple 'Select multiple devices'); fi
+        if multi_gpu_available; then
+            options+=(multiple 'Select multiple devices')
+            hint='Auto lets llama.cpp choose, including multiple GPUs.\nChoose a device or select several explicitly.'
+        fi
     else
         message 'Could not list devices within the time limit, or probing is unavailable.\nCheck the llama.cpp folder and drivers. Auto and CPU only remain available.'
     fi
     local selected=$DEVICE
-    if [[ "$selected" == *,* ]]; then selected=multiple; fi
-    if choice=$(menu --default-item "$selected" --menu 'Auto lets llama.cpp choose, including multiple GPUs.\nChoose a device or select several explicitly.' 19 80 10 "${options[@]}"); then
+    if [[ "$selected" == *,* ]]; then
+        selected=auto
+        if multi_gpu_available; then selected=multiple; fi
+    fi
+    if choice=$(menu --default-item "$selected" --menu "$hint" 19 80 10 "${options[@]}"); then
         if [[ "$choice" == multiple ]]; then select_multiple_devices; else DEVICE="$choice"; fi
     fi
 }
 
 select_multiple_devices() {
+    multi_gpu_available || return 0
     local name i state choice
     local -a names options=()
     local -A selected_names=()
@@ -96,6 +103,7 @@ select_multiple_devices() {
     names+=("${DEVICE_NAMES[@]}")
     # Keep selected devices in their saved order: ratios follow this order.
     for name in "${names[@]}"; do
+        [[ " ${GPU_DEVICE_NAMES[*]} " == *" $name "* ]] || continue
         [[ ! -v "selected_names[$name]" ]] || continue
         selected_names[$name]=1
         for i in "${!DEVICE_NAMES[@]}"; do
@@ -115,25 +123,15 @@ select_multiple_devices() {
 }
 
 gpu_memory_menu() {
-    local action=margin choice mode flag count=0 UI_TITLE='GPU memory'
+    local action=margin choice mode flag UI_TITLE='GPU memory'
     local -a options modes
-    if [[ "$DEVICE" == none ]]; then
-        message 'GPU memory settings are inactive with CPU only.\nPrevious values are kept for GPU use.'
-        return 0
-    fi
+    refresh_gpu_settings
+    "$GPU_SETTINGS_ACTIVE" || return 0
     server_capabilities
-    if [[ "$DEVICE" == auto ]]; then
-        if server_devices; then count=${#DEVICE_NAMES[@]}; fi
-    else
-        IFS=, read -r -a modes <<< "$DEVICE"
-        count=${#modes[@]}
-    fi
     while true; do
-        options=(margin "Memory margin (MiB)  $(compact_text "$(display_value "$FIT_TARGET")" 45)")
-        if (( count > 1 )); then
-            options+=(mode "Split mode           $(display_value "$SPLIT_MODE")" \
-                proportions "GPU proportions      $(compact_text "$(display_value "$TENSOR_SPLIT")" 45)")
-        fi
+        options=(margin "Memory margin (MiB)  $(compact_text "$(display_value "$FIT_TARGET")" 45)" \
+            mode "Split mode           $(display_value "$SPLIT_MODE")" \
+            proportions "GPU proportions      $(compact_text "$(display_value "$TENSOR_SPLIT")" 45)")
         action=$(menu --default-item "$action" --menu "Devices: $(compact_text "$(display_value "$DEVICE")" 58)\nAuto preserves native llama.cpp settings.\nMemory margin applies to automatic fitting, not total process RAM." 18 80 4 "${options[@]}" back Back) || return 0
         case "$action" in
             mode)
@@ -217,13 +215,17 @@ cache_menu() {
 
 performance_menu() {
     local action=device choice layers_label UI_TITLE=Performance
+    local -a gpu_option
     while true; do
+        refresh_gpu_settings
+        gpu_option=()
+        if "$GPU_SETTINGS_ACTIVE"; then gpu_option=(gpu 'GPU memory         Advanced distribution and margin'); fi
         layers_label=$(display_value "$GPU_LAYERS")
         if [[ "$DEVICE" == none ]]; then layers_label='Ignored (CPU only)'; fi
         action=$(menu --default-item "$action" --menu 'Auto and Default use llama.cpp defaults.\nFlash Attention stays automatic.' 19 80 6 \
             device "Device             $(compact_text "$(display_value "$DEVICE")" 53)" threads "CPU threads        $(display_value "$THREADS")" \
             layers "GPU layers         $layers_label" prompt "Prompt processing  $(display_value "$PROMPT_PROCESSING" Default)" \
-            gpu 'GPU memory         Advanced distribution and margin' back 'Back') || return 0
+            "${gpu_option[@]}" back 'Back') || return 0
         case "$action" in
             device) select_device ;;
             gpu) gpu_memory_menu ;;
