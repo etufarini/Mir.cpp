@@ -2,7 +2,7 @@
 # Bootstrap coverage includes real macOS Bash 3.2 and a system-only PATH.
 set -euo pipefail
 TEST_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
-python3 - "$TEST_ROOT" <<'PY'
+python3 -I - "$TEST_ROOT" <<'PY'
 import os
 import fcntl
 import pty

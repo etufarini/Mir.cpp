@@ -16,14 +16,21 @@ lint_adapter() {
 run() { printf '\nChecking %s\n' "$1"; "$BASH" "$MIR_ROOT/tests/$1" "${@:2}"; }
 if [[ "$suite" == common || "$suite" == all ]]; then
     run architecture.sh
+    test_scripts=("$MIR_ROOT"/tests/*.sh "$MIR_ROOT"/tests/helpers/*.sh "$MIR_ROOT"/tests/platform/*.sh "$MIR_ROOT"/tests/native/*.sh)
+    lint_pid=''
     if command -v shellcheck >/dev/null; then
-        shellcheck -x -P "$MIR_ROOT" -P SCRIPTDIR "$MIR_ROOT/mir.sh" "$MIR_ROOT/sh/install.sh" "$MIR_ROOT/sh/build-install.sh" "$MIR_ROOT/tests/run.sh"
+        # Static analysis only reads repository files; fixtures use temporary directories.
+        shellcheck -x -P "$MIR_ROOT" -P SCRIPTDIR "$MIR_ROOT/mir.sh" "$MIR_ROOT/sh/install.sh" "$MIR_ROOT/sh/build-install.sh" "${test_scripts[@]}" &
+        lint_pid=$!
     fi
-    for file in "$MIR_ROOT/mir.sh" "$MIR_ROOT"/lib/*.sh "$MIR_ROOT"/lib/tui/*.sh "$MIR_ROOT/sh/install.sh"; do "$BASH" -n "$file"; done
+    for file in "$MIR_ROOT/mir.sh" "$MIR_ROOT"/lib/*.sh "$MIR_ROOT"/lib/tui/*.sh "$MIR_ROOT/sh/install.sh" "${test_scripts[@]}"; do "$BASH" -n "$file"; done
+    run config.sh
+    run storage.sh
     run regression.sh
     run portability.sh
     run memory.sh
     run tui.sh
+    if [[ -n "$lint_pid" ]]; then wait "$lint_pid"; fi
 fi
 if [[ "$suite" == linux || "$suite" == all ]]; then
     lint_adapter linux

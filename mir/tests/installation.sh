@@ -2,7 +2,7 @@
 # Installer integration checks use local archives and an isolated HOME.
 set -euo pipefail
 TEST_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
-python3 - "$TEST_ROOT" "${1:-Linux}" <<'PY'
+python3 -I - "$TEST_ROOT" "${1:-Linux}" <<'PY'
 import io
 import shlex
 import os

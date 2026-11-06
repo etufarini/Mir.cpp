@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Opt-in network smoke check of the published README command; uses an isolated HOME.
 set -euo pipefail
-python3 - <<'PY'
+python3 -I - <<'PY'
 import os
 from pathlib import Path
 import subprocess

@@ -2,7 +2,7 @@
 # Darwin fixtures run on either host; native socket checks run only on macOS.
 set -euo pipefail
 TEST_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
-python3 - "$TEST_ROOT" <<'PY'
+python3 -I - "$TEST_ROOT" <<'PY'
 import os
 from pathlib import Path
 import shutil

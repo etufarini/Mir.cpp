@@ -20,7 +20,7 @@ for TEST_STATUS in 0 1 5 255; do
 done
 unset -f dialog
 printf 'PASS: dialog-only environment isolation, selection output and unchanged cancel/timeout statuses\n'
-python3 - "$TEST_ROOT" <<'PY'
+python3 -I - "$TEST_ROOT" <<'PY'
 import fcntl
 import os
 from pathlib import Path

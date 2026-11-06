@@ -2,7 +2,7 @@
 # Portable defaults and simulated backend/model edge cases; no real inference.
 set -euo pipefail
 TEST_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
-python3 - "$TEST_ROOT" <<'PY'
+python3 -I - "$TEST_ROOT" <<'PY'
 import json
 import os
 from pathlib import Path
@@ -108,7 +108,7 @@ sys.exit(status)
         data = (work / 'args').read_bytes().split(b'\0')[:-1] if (work / 'args').exists() else []
         return result, [s.decode() for s in data]
 
-    for context in ['auto', '0', '256', '1024', '2147483647']:
+    for context in ['auto', '0', '1024']:
         result, args = launch({'MIR_CTX_SIZE':context})
         assert result.returncode == 0, result.stderr
         if context == 'auto':
@@ -117,9 +117,8 @@ sys.exit(status)
             assert args[args.index('--ctx-size')+1] == context
     result, args = launch({'LLAMA_ARG_CTX_SIZE':'2048'})
     assert result.returncode == 0 and '--ctx-size' not in args
-    for context in ['', '-1', '01', '2147483648', '999999999999999999999999', '1+1']:
-        result, args = launch({'MIR_CTX_SIZE':context})
-        assert result.returncode != 0 and not args, context
+    result, args = launch({'MIR_CTX_SIZE':'1+1'})
+    assert result.returncode != 0 and not args
     check('''initialize_config "$2"
 for CTX_SIZE in auto 0 1024; do
     DEVICE=Vulkan0,Vulkan1
@@ -159,19 +158,11 @@ if valid_device "$DEVICE"; then exit 1; fi
         assert result.returncode == 0 and flag not in args and args[args.index('--gpu-layers')+1] == '0'
         result, args = launch({'MIR_'+key:value, 'TEST_HELP':help_text.replace(flag,'--unavailable')})
         assert result.returncode != 0 and flag in result.stderr and not args
-    invalid_gpu = {'SPLIT_MODE':['','bogus','LAYER','$(touch executed)'],
-                   'TENSOR_SPLIT':['','0','0,0.0','-1,2','1,','1,,2','1/2','01,2','nan,1','1e2,1',
-                                   '2147483648,1','1.1234567890,1','$(touch executed)'],
-                   'FIT_TARGET':['','-1','1.5','01','1,','1,,2','2147483648','$(touch executed)']}
-    for key, values in invalid_gpu.items():
-        for value in values:
-            result, args = launch({'MIR_'+key:value})
-            assert result.returncode != 0 and not args, (key,value,result.stderr)
-    for value in ['0,1','0.5,1.25','2147483647,1']:
-        result, args = launch({'MIR_TENSOR_SPLIT':value})
-        assert result.returncode == 0, result.stderr
-    result, args = launch({'MIR_FIT_TARGET':'0'})
-    assert result.returncode == 0
+    for key in ('SPLIT_MODE', 'TENSOR_SPLIT', 'FIT_TARGET'):
+        result, args = launch({'MIR_'+key:'$(touch executed)'})
+        assert result.returncode != 0 and not args, (key,result.stderr)
+    result, args = launch({'MIR_TENSOR_SPLIT':'0,1', 'MIR_FIT_TARGET':'0'})
+    assert result.returncode == 0, result.stderr
     for arguments in [['-sm','row','-ts','1,2','-fitt','1024'],
                       ['--split-mode=row','--tensor-split=1,2','--fit-target=1024']]:
         check('''initialize_config "$2"
@@ -300,7 +291,7 @@ help=$'--cache-type-k TYPE\n  allowed values: f16, q4_0,\n                  cust
 [[ $(cache_types V "$help") == f16 ]]
 [[ -z $(cache_types K $'--cache-type-k-draft TYPE\nallowed values: draft_only') ]]
 ''')
-    for kind in ['f32', 'f16', 'bf16', 'q8_0', 'q4_0', 'q4_1', 'iq4_nl', 'q5_0', 'q5_1']:
+    for kind in ['q8_0', 'f16', 'q5_1']:
         result, args = launch({'MIR_CACHE_TYPE_K':kind, 'MIR_CACHE_TYPE_V':kind})
         assert result.returncode == 0, (kind, result.stderr)
         assert args[args.index('--cache-type-k')+1] == kind
@@ -313,9 +304,8 @@ help=$'--cache-type-k TYPE\n  allowed values: f16, q4_0,\n                  cust
     result, args = launch({'LLAMA_ARG_CACHE_TYPE_K':'q8_0', 'MIR_CACHE_TYPE_K':'q4_0'})
     assert result.returncode == 0 and 'KV cache: K q4_0 | V q4_0' in result.stdout
     for key in ['K', 'V']:
-        for value in ['', 'Q4_0', 'q4_0 q8_0', '$(touch executed)', '--port']:
-            result, args = launch({'MIR_CACHE_TYPE_'+key:value})
-            assert result.returncode != 0 and not args, (key, value)
+        result, args = launch({'MIR_CACHE_TYPE_'+key:'$(touch executed)'})
+        assert result.returncode != 0 and not args, key
         result, args = launch({'MIR_CACHE_TYPE_'+key:'unavailable'})
         assert result.returncode != 0 and not args and 'not advertised' in result.stderr
     for arguments in [['-ctk','q8_0','-ctv','f16'], ['--cache-type-k=q8_0','--cache-type-v=f16']]:

@@ -2,7 +2,7 @@
 # Isolated build/update and package-manager checks; no real packages or models.
 set -euo pipefail
 TEST_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
-python3 - "$TEST_ROOT" "${1:-linux}" <<'PY'
+python3 -I - "$TEST_ROOT" "${1:-linux}" <<'PY'
 import hashlib
 import io
 import json
@@ -38,9 +38,11 @@ with tempfile.TemporaryDirectory(prefix='mir-build-test-') as temporary:
 
     executable('git', '''#!/usr/bin/env bash
 if [[ $* == *rev-parse* ]]; then
+    if [[ $* == *--verify* ]]; then printf 'tag\\n' >> "$TEST_WORK/build.events"; fi
     [[ $* != *--verify* || ${TEST_NOT_TAG:-0} == 0 ]] || exit 1
     printf '%040d\\n' 1; exit
 fi
+printf 'clone\\n' >> "$TEST_WORK/build.events"
 [[ ${TEST_CLONE_FAIL:-0} == 0 ]] || exit 1
 printf '%s\\0' "$@" >> "$TEST_WORK/git.args"
 if [[ ${TEST_SLOW:-0} == 1 ]]; then
@@ -57,12 +59,16 @@ elif [[ ${TEST_NO_UI:-0} == 0 ]]; then echo '<html>fixture</html>' > "$target/to
 ''')
     executable('cmake', '''#!/usr/bin/env bash
 printf '%s\\0' "$@" >> "$TEST_WORK/cmake.args"
+if [[ ${1:-} == -S ]]; then event=configure; else event=compile; fi
+printf '%s\\n' "$event" >> "$TEST_WORK/build.events"
 [[ ${TEST_CMAKE_FAIL:-0} == 0 ]] || exit 1
+[[ ${1:-} != --build || ${TEST_BUILD_FAIL:-0} == 0 ]] || exit 1
 if [[ $* == *'--target help'* ]]; then exit 99; fi
 if [[ ${1:-} == -S ]]; then
     mkdir -p "$4/bin"
     cat > "$4/bin/llama-server" <<'SERVER'
 #!/usr/bin/env bash
+printf 'probe:%s\\n' "${1:-}" >> "$TEST_WORK/build.events"
 [[ ${TEST_PROBE_FAIL:-0} == 0 ]] || exit 1
 if [[ ${TEST_SLOW_PROBE:-0} == 1 ]]; then
     echo "$$" > "$TEST_WORK/probe.pid"
@@ -233,13 +239,23 @@ rm -rf -- "$stage"
     print('PASS: symlinked staging paths resolve consistently for upstream CMake UI packaging')
 
 
-    for failure in ('TEST_CLONE_FAIL', 'TEST_NOT_TAG', 'TEST_CMAKE_FAIL', 'TEST_PROBE_FAIL', 'TEST_NO_UI', 'TEST_NO_DEVICE'):
+    failures = {'TEST_CLONE_FAIL':'clone', 'TEST_NOT_TAG':'tag',
+                'TEST_CMAKE_FAIL':'configure', 'TEST_BUILD_FAIL':'compile',
+                'TEST_PROBE_FAIL':'probe:--version',
+                'TEST_NO_UI':'probe:--list-devices', 'TEST_NO_DEVICE':'probe:--list-devices'}
+    for failure, event in failures.items():
+        (work / 'build.events').unlink(missing_ok=True)
         check('''previous=$LLAMA_CPP_PATH; before=$(cat "$PATHS_FILE")
 count=$(find "$(build_root)/builds" -mindepth 1 -maxdepth 1 -type d | wc -l)
-if install_build broken vulkan 2; then exit 1; fi
+if install_build broken "$TEST_GPU" 2; then exit 1; fi
 [[ $LLAMA_CPP_PATH == "$previous" && $(cat "$PATHS_FILE") == "$before" ]]
 [[ $(find "$(build_root)/builds" -mindepth 1 -maxdepth 1 -type d | wc -l) == "$count" ]]
 ''', {failure: '1'})
+        assert (work / 'build.events').is_file(), (adapter, failure, 'Build stopped before the fixture')
+        assert (work / 'build.events').read_text().splitlines()[-1] == event, failure
+        if failure in ('TEST_NO_UI', 'TEST_NO_DEVICE'):
+            error = 'Web UI assets are missing' if failure == 'TEST_NO_UI' else 'No accelerator is available'
+            assert error in (home / 'data/mir.cpp/llama.cpp/build.log').read_text(), failure
     check('''previous=$LLAMA_CPP_PATH; before=$(cat "$PATHS_FILE")
 save_paths() { return 1; }
 if install_build unsaved cpu 2; then exit 1; fi
