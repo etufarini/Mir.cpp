@@ -269,13 +269,6 @@ GENERATION[seed]=8
 GENERATION[seed]=7
 [[ $(profile_status) == Generation ]]
 before=$(profile_data)
-for field in model context port device threads gpu_layers prompt_processing cache_type_k cache_type_v "${GENERATION_KEYS[@]}"; do
-    while IFS= read -r line; do
-        [[ "$line" == "$field="* ]] || printf '%s\n' "$line"
-    done < "$PROFILES_DIR/Generation.conf" > "$PROFILES_DIR/Incomplete.conf"
-    if load_profile "$PROFILES_DIR/Incomplete.conf"; then exit 1; fi
-    [[ $(profile_data) == "$before" && $(profile_status) == Generation ]]
-done
 for value in 'temperature=nan' 'top_p=2' 'seed=4294967296' 'max_tokens=-2'; do
     field=${value%%=*}
     while IFS= read -r line; do
@@ -284,13 +277,6 @@ for value in 'temperature=nan' 'top_p=2' 'seed=4294967296' 'max_tokens=-2'; do
     if load_profile "$PROFILES_DIR/Invalid.conf"; then exit 1; fi
     [[ $(profile_data) == "$before" && $(profile_status) == Generation ]]
 done
-head -n 7 "$PROFILES_DIR/Generation.conf" > "$PROFILES_DIR/Incomplete.conf"
-if load_profile "$PROFILES_DIR/Incomplete.conf"; then exit 1; fi
-[[ $(profile_data) == "$before" && $(profile_status) == Generation ]]
-cat "$PROFILES_DIR/Generation.conf" > "$PROFILES_DIR/Invalid.conf"
-printf 'unexpected=auto\n' >> "$PROFILES_DIR/Invalid.conf"
-if load_profile "$PROFILES_DIR/Invalid.conf"; then exit 1; fi
-[[ $(profile_data) == "$before" && $(profile_status) == Generation ]]
 # Invalid or canceled edits preserve all saved values and tracking.
 message() { :; }
 ui() { printf 'bad'; }
@@ -301,10 +287,89 @@ ui() { return 255; }
 edit_generation_value seed
 generation_menu
 [[ $(profile_data) == "$before" && $(profile_status) == Generation ]]
-rm "$PROFILES_DIR/Generation.conf" "$PROFILES_DIR/Incomplete.conf" "$PROFILES_DIR/Invalid.conf"
+rm "$PROFILES_DIR/Generation.conf" "$PROFILES_DIR/Invalid.conf"
 '''
     subprocess.run(['bash','-euo','pipefail','-c',sources+generation_checks,'test',str(root),str(model)],env=env,check=True)
-    print('PASS: eighteen-field profiles, required fields, Modified tracking, rollback, cancellation and planner isolation')
+    print('PASS: current profile saves, Modified tracking, rollback, cancellation and planner isolation')
+
+    flexible_profiles = r'''
+initialize_config "$2"
+CTX_SIZE=8192 PORT=10001 DEVICE=Vulkan0 THREADS=4 GPU_LAYERS=12
+PROMPT_PROCESSING=large-batch CACHE_TYPE_K=q8_0 CACHE_TYPE_V=f16
+set_generation_preset focused
+GENERATION[seed]=42 GENERATION[max_tokens]=1024
+write_profile "$PROFILES_DIR/Complete.conf"
+complete=$(profile_data)
+for field in model context port device threads gpu_layers prompt_processing cache_type_k cache_type_v "${GENERATION_KEYS[@]}"; do
+    load_profile "$PROFILES_DIR/Complete.conf"
+    before=$(profile_data)
+    tracking=$SAVED_PROFILE
+    while IFS= read -r line; do
+        [[ "$line" == "$field="* ]] || printf '%s\n' "$line"
+    done < "$CURRENT_PROFILE" > "$PROFILES_DIR/Partial.conf"
+    if [[ "$field" == model ]]; then
+        if load_profile "$PROFILES_DIR/Partial.conf"; then exit 1; fi
+        [[ $(profile_data) == "$before" && $SAVED_PROFILE == "$tracking" && $(profile_status) == Complete ]]
+    else
+        case "$field" in port) default=9931 ;; cache_type_k|cache_type_v) default=q4_0 ;; *) default=auto ;; esac
+        expected=$(printf '%s\n' "$complete" | sed "s/^$field=.*/$field=$default/")
+        load_profile "$PROFILES_DIR/Partial.conf"
+        [[ $(profile_data) == "$expected" && $(profile_status) == Partial ]]
+    fi
+    load_profile "$PROFILES_DIR/Complete.conf"
+    # Duplicate recognized fields remain errors even when both values are valid.
+    printf '%s\n' "$complete" > "$PROFILES_DIR/Duplicate.conf"
+    while IFS= read -r line; do
+        if [[ "$line" == "$field="* ]]; then printf '%s\n' "$line"; fi
+    done < "$CURRENT_PROFILE" >> "$PROFILES_DIR/Duplicate.conf"
+    if load_profile "$PROFILES_DIR/Duplicate.conf"; then exit 1; fi
+    [[ $(profile_data) == "$complete" && $SAVED_PROFILE == "$complete" && $(profile_status) == Complete ]]
+done
+# A model-only profile resets every optional control, including environment overrides.
+printf 'model=%s\n' "$2" > "$PROFILES_DIR/Minimal.conf"
+load_profile "$PROFILES_DIR/Minimal.conf"
+[[ $CTX_SIZE == auto && $PORT == 9931 && $DEVICE == auto && $THREADS == auto && $GPU_LAYERS == auto ]]
+[[ $PROMPT_PROCESSING == auto && $CACHE_TYPE_K == q4_0 && $CACHE_TYPE_V == q4_0 ]]
+for key in "${GENERATION_KEYS[@]}"; do [[ ${GENERATION[$key]} == auto ]]; done
+defaults=$(profile_data)
+[[ $(profile_status) == Minimal ]]
+# Old and future fields are ignored literally, including duplicate unknown keys.
+printf '%s\n' "$complete" 'removed_control=auto' 'removed_control=off' 'future_control=$(touch executed)' '$(touch executed)=ignored' > "$PROFILES_DIR/Compatible.conf"
+original=$(cat "$PROFILES_DIR/Compatible.conf")
+load_profile "$PROFILES_DIR/Compatible.conf"
+[[ $(profile_data) == "$complete" && $(profile_status) == Compatible && ! -e executed ]]
+[[ $(cat "$CURRENT_PROFILE") == "$original" ]]
+write_profile "$PROFILES_DIR/Resaved.conf"
+[[ $(cat "$CURRENT_PROFILE") == "$complete" ]]
+# Reject malformed input and invalid recognized fields without changing state.
+for value in 'malformed line without separator' 'model=' "model=$2.missing.gguf" 'context=' 'port=' 'device=' 'threads=' 'gpu_layers=' 'prompt_processing=' 'cache_type_k=' 'cache_type_v=' 'temperature=$(touch executed)'; do
+    field=${value%%=*}
+    while IFS= read -r line; do
+        [[ "$line" == "$field="* ]] || printf '%s\n' "$line"
+    done < "$CURRENT_PROFILE" > "$PROFILES_DIR/Invalid.conf"
+    printf '%s\n' "$value" >> "$PROFILES_DIR/Invalid.conf"
+    if load_profile "$PROFILES_DIR/Invalid.conf"; then exit 1; fi
+    [[ $(profile_data) == "$complete" && $SAVED_PROFILE == "$complete" && $(profile_status) == Resaved && ! -e executed ]]
+done
+# Partial historical layouts also use defaults for the fields they omit.
+sed '/^cache_type_[kv]=/d' "$PROFILES_DIR/Complete.conf" > "$PROFILES_DIR/Partial.conf"
+printf 'removed_control=auto\n' >> "$PROFILES_DIR/Partial.conf"
+load_profile "$PROFILES_DIR/Partial.conf"
+expected=$(printf '%s\n' "$complete" | sed 's/^cache_type_k=.*/cache_type_k=q4_0/; s/^cache_type_v=.*/cache_type_v=q4_0/')
+[[ $(profile_data) == "$expected" && $(profile_status) == Partial ]]
+head -n 7 "$PROFILES_DIR/Complete.conf" > "$PROFILES_DIR/Partial.conf"
+load_profile "$PROFILES_DIR/Partial.conf"
+[[ $CTX_SIZE == 8192 && $PORT == 10001 && $CACHE_TYPE_K == q4_0 && $CACHE_TYPE_V == q4_0 ]]
+for key in "${GENERATION_KEYS[@]}"; do [[ ${GENERATION[$key]} == auto ]]; done
+printf 'model=%s' "$2" > "$PROFILES_DIR/Minimal.conf"
+load_profile "$PROFILES_DIR/Minimal.conf"
+[[ $(profile_data) == "$defaults" ]]
+'''
+    subprocess.run(['bash','-euo','pipefail','-c',sources+flexible_profiles,'test',str(root),str(model)],
+                   env=env | {'MIR_PORT':'11000', 'MIR_CACHE_TYPE_K':'f32', 'MIR_CACHE_TYPE_V':'q8_0',
+                              'MIR_GENERATION_PRESET':'exploratory', 'LLAMA_ARG_CACHE_TYPE_V':'f16'},
+                   cwd=work, check=True)
+    print('PASS: flexible profiles, independent defaults, unknown literal fields, current-only saves and atomic load rejection')
 
     summary_checks = r'''
 initialize_config "$2"
