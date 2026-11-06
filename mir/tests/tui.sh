@@ -43,7 +43,7 @@ if not shutil.which('dialog'):
 base = dict(os.environ, TERM='xterm-256color', LINES='17', COLUMNS='53', DIALOGOPTS='--begin 1 1')
 with tempfile.TemporaryDirectory(prefix='mir-tui-') as temporary:
     work = Path(temporary)
-    def geometry(shape, resized=None, menu=False):
+    def geometry(shape, resized=None, menu=False, widget=None):
         master, slave = pty.openpty()
         def size(value):
             fcntl.ioctl(master, termios.TIOCSWINSZ, struct.pack('HHHH', *value, 0, 0))
@@ -55,7 +55,23 @@ THEME_FILE="$1/dialogrc"
 UI_TITLE='Geometry check'
 '''
         height, width = (22, 80) if menu else (12, 76)
-        if menu:
+        if widget:
+            height, width = {'devices':(20,80), 'gpu':(18,80), 'performance':(19,80)}[widget]
+            code += '''source "$1/lib/config.sh"
+source "$1/lib/tui/settings.sh"
+TRACE_FILE=$2
+dialog() { command dialog --trace "$TRACE_FILE" "$@"; }
+server_capabilities() { :; }
+DEVICE=Accelerator1,Accelerator0
+DEVICE_NAMES=(Accelerator0 Accelerator1)
+DEVICE_DESCRIPTIONS=('First GPU' 'Second GPU')
+FIT_TARGET=auto SPLIT_MODE=auto TENSOR_SPLIT=auto
+GPU_LAYERS=auto THREADS=auto PROMPT_PROCESSING=auto
+'''
+            code += {'devices':'select_multiple_devices', 'gpu':'gpu_memory_menu',
+                     'performance':'performance_menu'}[widget] + '\n'
+            code += '[[ $DEVICE == Accelerator1,Accelerator0 ]]\n'
+        elif menu:
             code += 'value=$(ui --trace "$2" --menu "Display check" 22 80 2 first "First item" second "Second item"); [[ "$value" == first ]]\n'
         else:
             code += 'ui --trace "$2" --yesno "Display check" 12 76\n'
@@ -104,7 +120,7 @@ UI_TITLE='Geometry check'
                 size(resized)
                 os.killpg(process.pid, signal.SIGWINCH)
                 await_position(resized, after=previous_count)
-            os.write(master, b'\n')
+            os.write(master, b'\x1b' if widget in ('gpu','performance') else b'\n')
             deadline = time.monotonic() + 5
             while process.poll() is None and time.monotonic() < deadline:
                 pump()
@@ -120,4 +136,6 @@ UI_TITLE='Geometry check'
     geometry((40, 120), menu=True)
     geometry((40, 120), resized=(24, 80))
     geometry((24, 80), resized=(40, 120), menu=True)
+    for widget in ('devices','gpu','performance'):
+        geometry((24, 80), widget=widget)
 PY

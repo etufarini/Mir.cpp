@@ -217,16 +217,41 @@ Start with **Auto** and **Default** under **Performance**:
 
 | Option | Behavior |
 | --- | --- |
-| Device | **Auto**, **CPU only**, or a device discovered through `--list-devices`. CPU only disables GPU layers. |
+| Device | **Auto**, **CPU only**, a discovered device, or **Select multiple devices**. Auto can already use multiple GPUs. Space selects devices in the checklist; Enter applies, Back/Esc cancels. CPU only disables GPU layers. |
 | CPU threads | **auto** or 1–2147483647. More threads are not always faster. |
 | GPU layers | **auto**, **all**, or 0–2147483647. Auto leaves native defaults in effect; all can exceed memory. CPU only shows **Ignored (CPU only)** and retains the chosen value for other devices. |
 | Prompt processing | **Default** omits batch overrides. **Low memory** uses `--batch-size 512 --ubatch-size 128`; **Large batch** uses `--batch-size 2048 --ubatch-size 1024`. |
+| GPU memory | Advanced memory margin and, with multiple devices, split mode and relative GPU proportions. All default to **Auto**. |
 
 Batch sizes affect input processing, not the maximum answer length. Larger
 batches need more memory and do not guarantee faster generation. CPU and GPU can
 share memory on integrated graphics. Flash Attention stays automatic. Change one
 setting at a time and compare equivalent model, context and input workloads.
 If loading fails, try Auto/Default or a smaller context.
+
+**GPU memory** is optional. Keep Auto unless you need to correct placement or
+leave room for other GPU applications:
+
+- **Memory margin (MiB)** sets the free-memory target used by llama.cpp's automatic
+  fitting (`--fit-target`). One integer applies to every device; a comma-separated
+  list sets margins in device order, for example `2048,1024`. This is not a limit
+  on process RAM or a guarantee of free VRAM. It has no effect when native fitting
+  is disabled and cannot make a fixed configuration fit by itself.
+- **Split mode** offers modes advertised by the selected build: layer distribution,
+  row distribution and experimental tensor parallelism where available. Model and
+  backend restrictions still apply. No mode guarantees a speed improvement.
+- **GPU proportions** passes relative weights to `--tensor-split`, for example
+  `2,1`, not GiB or fixed memory reservations. Values must be nonnegative, with at
+  least one positive value. Effective placement also depends on split mode and
+  native fitting. The numbers follow the displayed device order; recheck them
+  after changing devices. With Auto devices, use native `--list-devices` order.
+
+The checklist preserves the order of devices already selected. New devices follow
+discovery order. Device lists come directly from llama.cpp; some builds also list
+CPU accelerators. Distribution controls appear only when multiple devices are
+selected or discovered under Auto. CPU only keeps these settings saved but omits
+their launcher arguments. Unsupported options or advertised split modes are
+reported before launch; remaining runtime compatibility checks belong to llama.cpp.
 
 Before launch, Mir.cpp checks requested controls against server help and checks
 explicit devices when discovery succeeds. Unsupported choices produce an error;
@@ -320,7 +345,8 @@ the label to **Not saved**.
 Profiles are plain `key=value` files under
 `${XDG_CONFIG_HOME:-$HOME/.config}/mir.cpp/profiles/`; back up this folder to retain
 them. New saves contain the current settings: model, context, port, device,
-threads, GPU layers, prompt processing, K/V cache types and nine generation values.
+threads, GPU layers, prompt processing, K/V cache types, GPU split mode,
+proportions, memory margin and nine generation values.
 Loading ignores unknown or removed fields. Only the model path is required.
 Missing settings use launcher defaults: port 9931, Q4_0 for both cache types and
 Auto for the remaining controls, independently of current settings or environment
@@ -368,6 +394,9 @@ currently displayed paths.
 | `MIR_DEVICE` | `auto`, `none` (CPU only), or comma-separated discovered device names; `auto`. |
 | `MIR_THREADS` | `auto` or 1–2147483647; `auto`. |
 | `MIR_GPU_LAYERS` | `auto`, `all` or 0–2147483647; `auto`. |
+| `MIR_SPLIT_MODE` | `auto`, `none`, `layer`, `row` or `tensor`; `auto`. |
+| `MIR_TENSOR_SPLIT` | `auto` or comma-separated nonnegative proportions, at least one positive; `auto`. |
+| `MIR_FIT_TARGET` | `auto`, one nonnegative MiB integer or a comma-separated list; `auto`. |
 | `MIR_PROMPT_PROCESSING` | `auto`, `low-memory`, `large-batch`; `auto`. |
 | `MIR_CACHE_TYPE_K`, `MIR_CACHE_TYPE_V` | Lowercase type advertised by the server; `q4_0` for each unless configured otherwise. |
 
@@ -379,6 +408,21 @@ CPU, four threads and smaller input chunks:
 MIR_DEVICE=none MIR_THREADS=4 MIR_PROMPT_PROCESSING=low-memory \
     ~/.local/bin/mir "/path/to/model.gguf"
 ```
+
+The three GPU memory controls take precedence over `LLAMA_ARG_SPLIT_MODE`,
+`LLAMA_ARG_TENSOR_SPLIT` and `LLAMA_ARG_FIT_TARGET`, respectively. Auto omits the
+launcher argument and leaves native settings in effect; explicit trailing
+arguments still win. Empty values are invalid. Margin integers and the integer
+part of each proportion are limited to 2147483647; proportions accept up to nine
+decimal places. These controls are also saved in profiles; older profiles load
+them as Auto. For two discovered devices:
+
+```bash
+MIR_DEVICE=CUDA0,CUDA1 MIR_TENSOR_SPLIT=2,1 MIR_FIT_TARGET=2048 \
+    ~/.local/bin/mir "/path/to/model.gguf"
+```
+
+Use device names from your build, not the example names if they differ.
 
 For cache types, `MIR_CACHE_TYPE_K` and `MIR_CACHE_TYPE_V` override the respective
 native `LLAMA_ARG_CACHE_TYPE_K` and `LLAMA_ARG_CACHE_TYPE_V` values. If neither is
@@ -417,8 +461,8 @@ these options are not inferred from filenames or saved in profiles. Sampling
 arguments are excluded from memory planning.
 
 Legacy `LLAMA_*` launcher aliases remain supported: replace the `MIR_` prefix
-with `LLAMA_`, except `MIR_LLAMA_CPP_DIR` maps to `LLAMA_CPP_DIR` and the new cache
-controls use only the native aliases described above. Explicitly set
+with `LLAMA_`, except `MIR_LLAMA_CPP_DIR` maps to `LLAMA_CPP_DIR` and the cache
+and GPU memory controls use only the native aliases described above. Explicitly set
 `MIR_*` values take precedence even when empty and are validated. Empty legacy
 values retain fallback defaults for paths and basic controls; empty individual
 generation aliases are validated as invalid. Native `LLAMA_ARG_*` variables

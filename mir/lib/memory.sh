@@ -31,10 +31,22 @@ memory_estimate() {
     for flag in K V; do
         name="CACHE_TYPE_$flag"
         value=$(cache_types "$flag" "$help")
-        cache_type_supported "${!name}" "$value" || return 0
+        listed_value "${!name}" "$value" || return 0
     done
     build_model_args
     estimator_args=("${MODEL_ARGS[@]}")
+    if [[ "$DEVICE" != none ]]; then
+        for name in SPLIT_MODE TENSOR_SPLIT FIT_TARGET; do
+            flag=${name,,}; flag="--${flag//_/-}"
+            value=${!name}
+            if [[ "$value" == auto ]]; then
+                name="LLAMA_ARG_$name"
+                value=${!name-auto}
+                if [[ "$value" != auto ]]; then estimator_args+=("$flag" "$value"); fi
+            fi
+            if [[ "$value" != auto ]] && ! supports_option "$flag" "$help"; then return 0; fi
+        done
+    fi
     # Estimate only layouts the helper can represent, including server-only
     # defaults and native environment controls that older helpers may ignore.
     server_capabilities
@@ -202,6 +214,11 @@ refresh_memory() {
     local key
     # Reuse expensive model planning until settings change; refresh free budgets.
     key=$(printf '%s\n' "$SERVER" "$MODEL" "$CTX_SIZE" "$DEVICE" "$THREADS" "$GPU_LAYERS" "$PROMPT_PROCESSING" "$CACHE_TYPE_K" "$CACHE_TYPE_V" \
+        "$SPLIT_MODE" "$TENSOR_SPLIT" "$FIT_TARGET" \
+        "${LLAMA_ARG_SPLIT_MODE+x}:${LLAMA_ARG_SPLIT_MODE-}" \
+        "${LLAMA_ARG_TENSOR_SPLIT+x}:${LLAMA_ARG_TENSOR_SPLIT-}" \
+        "${LLAMA_ARG_FIT_TARGET+x}:${LLAMA_ARG_FIT_TARGET-}" \
+        "${LLAMA_ARG_FIT+x}:${LLAMA_ARG_FIT-}" \
         "${LLAMA_ARG_FLASH_ATTN+x}:${LLAMA_ARG_FLASH_ATTN-}" \
         "${LLAMA_ARG_N_PARALLEL+x}:${LLAMA_ARG_N_PARALLEL-}" \
         "${LLAMA_ARG_KV_UNIFIED+x}:${LLAMA_ARG_KV_UNIFIED-}" \

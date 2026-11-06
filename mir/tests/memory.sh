@@ -13,6 +13,7 @@ MODEL="$work/model with spaces.gguf"
 touch "$MODEL"
 CTX_SIZE=4096 THREADS=auto DEVICE=auto GPU_LAYERS=auto PROMPT_PROCESSING=auto
 CACHE_TYPE_K=q4_0 CACHE_TYPE_V=q4_0
+SPLIT_MODE=auto TENSOR_SPLIT=auto FIT_TARGET=auto
 export MEMORY_TEST_WORK="$work"
 cat > "$SERVER" <<'MOCK'
 #!/usr/bin/env bash
@@ -212,6 +213,47 @@ refresh_memory
 unset LLAMA_ARG_KV_UNIFIED MEMORY_TEST_SERVER_HELP MEMORY_TEST_HELP
 CAPABILITIES_SERVER='' MEMORY_KEY=''
 printf 'PASS: planner/server layout compatibility, auto slots, native KV controls, cache invalidation and independent live telemetry\n'
+
+export MEMORY_TEST_HELP='--fit-print --parallel --split-mode --tensor-split --fit-target'
+for setting in SPLIT_MODE TENSOR_SPLIT FIT_TARGET; do
+    case "$setting" in SPLIT_MODE) value=layer ;; TENSOR_SPLIT) value=2,1 ;; FIT_TARGET) value=2048,1024 ;; esac
+    size=$(wc -c < "$work/args")
+    printf -v "$setting" '%s' "$value"
+    refresh_memory
+    [[ ${#MEMORY_NAMES[@]} == 2 ]]
+    (( $(wc -c < "$work/args") > size ))
+done
+python3 - "$work/args" <<'PYARGS'
+import sys
+from pathlib import Path
+args = Path(sys.argv[1]).read_bytes().split(b'\0')[:-1]
+for flag, value in [(b'--split-mode', b'layer'), (b'--tensor-split', b'2,1'),
+                    (b'--fit-target', b'2048,1024')]:
+    index = len(args) - 1 - args[::-1].index(flag)
+    assert args[index+1] == value
+PYARGS
+export MEMORY_TEST_HELP='--fit-print --parallel'
+MEMORY_KEY=''
+size=$(wc -c < "$work/args")
+refresh_memory
+[[ ${#MEMORY_NAMES[@]} == 0 ]]
+(( $(wc -c < "$work/args") == size ))
+# An explicit Auto preserves native overrides even with an older planner.
+SPLIT_MODE=auto TENSOR_SPLIT=auto FIT_TARGET=auto
+export LLAMA_ARG_TENSOR_SPLIT=3,1
+refresh_memory
+[[ ${#MEMORY_NAMES[@]} == 0 ]]
+export MEMORY_TEST_HELP='--fit-print --parallel --tensor-split'
+MEMORY_KEY=''
+refresh_memory
+[[ ${#MEMORY_NAMES[@]} == 2 ]]
+size=$(wc -c < "$work/args")
+export LLAMA_ARG_TENSOR_SPLIT=1,3
+refresh_memory
+(( $(wc -c < "$work/args") > size ))
+unset LLAMA_ARG_TENSOR_SPLIT MEMORY_TEST_HELP
+MEMORY_KEY=''
+printf 'PASS: GPU planner arguments, setting/native cache invalidation and unavailable forecasts for incompatible helpers\n'
 
 # The CPU override is shared by planning and launch without mutating profiles.
 DEVICE=none GPU_LAYERS=all

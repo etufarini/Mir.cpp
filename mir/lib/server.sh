@@ -9,7 +9,21 @@ server_capabilities() {
 
 supports_option() {
     local pattern="(^|[[:space:],])$1([[:space:]=,]|$)"
-    [[ "$SERVER_HELP" =~ $pattern ]]
+    [[ "${2-$SERVER_HELP}" =~ $pattern ]]
+}
+
+split_modes() {
+    local line mode
+    local -a modes
+    while IFS= read -r line; do
+        [[ "$line" == *--split-mode* && "$line" == *\{*\}* ]] || continue
+        line=${line#*\{}; line=${line%%\}*}
+        IFS=, read -r -a modes <<< "$line"
+        for mode in "${modes[@]}"; do
+            if [[ "$mode" =~ ^[a-z][a-z0-9_-]*$ ]]; then printf '%s\n' "$mode"; fi
+        done
+        break
+    done <<< "$SERVER_HELP"
 }
 
 # Read only the selected option's value list, including wrapped help output.
@@ -35,10 +49,10 @@ cache_types() {
     done <<< "$help"
 }
 
-cache_type_supported() {
-    local type
-    while IFS= read -r type; do
-        [[ "$type" != "$1" ]] || return 0
+listed_value() {
+    local value
+    while IFS= read -r value; do
+        [[ "$value" != "$1" ]] || return 0
     done <<< "$2"
     return 1
 }
@@ -63,18 +77,21 @@ resolve_endpoint() {
     EFFECTIVE_DEVICE=${LLAMA_ARG_DEVICE:-auto}
     EFFECTIVE_CACHE_TYPE_K=$CACHE_TYPE_K
     EFFECTIVE_CACHE_TYPE_V=$CACHE_TYPE_V
+    EFFECTIVE_SPLIT_MODE=${LLAMA_ARG_SPLIT_MODE-auto}
     CURL_ARGS=(--noproxy '*' --globoff)
     UNIX_SOCKET=''
     while (( $# )); do
         argument=$1
         case "$argument" in
-            --port|--host|--device|-dev|--cache-type-k|-ctk|--cache-type-v|-ctv)
+            --port|--host|--device|-dev|--cache-type-k|-ctk|--cache-type-v|-ctv|--split-mode|-sm|--tensor-split|-ts|--fit-target|-fitt)
                 (( $# >= 2 )) || { launch_error "Missing value for $argument."; return 1; }
                 case "$argument" in
                     --port) PORT=$2 ;;
                     --host) host=$2 ;;
                     --cache-type-k|-ctk) EFFECTIVE_CACHE_TYPE_K=$2 ;;
                     --cache-type-v|-ctv) EFFECTIVE_CACHE_TYPE_V=$2 ;;
+                    --split-mode|-sm) EFFECTIVE_SPLIT_MODE=$2 ;;
+                    --tensor-split|-ts|--fit-target|-fitt) : ;;
                     *) EFFECTIVE_DEVICE=$2 ;;
                 esac
                 shift ;;
@@ -83,6 +100,7 @@ resolve_endpoint() {
             --device=*|-dev=*) EFFECTIVE_DEVICE=${argument#*=} ;;
             --cache-type-k=*|-ctk=*) EFFECTIVE_CACHE_TYPE_K=${argument#*=} ;;
             --cache-type-v=*|-ctv=*) EFFECTIVE_CACHE_TYPE_V=${argument#*=} ;;
+            --split-mode=*|-sm=*) EFFECTIVE_SPLIT_MODE=${argument#*=} ;;
             -*)
                 # Infer value counts from native help so --alias '--port' stays
                 # data. Leave unknown switches for llama.cpp to interpret.
@@ -167,12 +185,17 @@ prepare_server() {
     fi
     ARGS+=("$@")
     resolve_endpoint "${ARGS[@]}" || return 1
+    types=$(split_modes)
+    if [[ "$EFFECTIVE_DEVICE" != none && "$EFFECTIVE_SPLIT_MODE" != auto && -n "$types" ]] && ! listed_value "$EFFECTIVE_SPLIT_MODE" "$types"; then
+        launch_error "GPU split mode '$EFFECTIVE_SPLIT_MODE' is not advertised by this llama-server. Review Performance > GPU memory."
+        return 1
+    fi
     for key in K V; do
         name="EFFECTIVE_CACHE_TYPE_$key"
         value=${!name}
         valid_cache_type "$value" || { launch_error "Invalid KV cache $key type: $value."; return 1; }
         types=$(cache_types "$key")
-        if [[ -n "$types" ]] && ! cache_type_supported "$value" "$types"; then
+        if [[ -n "$types" ]] && ! listed_value "$value" "$types"; then
             launch_error "KV cache $key type '$value' is not advertised by this llama-server. Choose a supported type under Model settings > KV Cache."
             return 1
         fi
@@ -196,6 +219,7 @@ prepare_server() {
 }
 
 build_model_args() {
+    local setting flag
     MODEL_ARGS=(--model "$MODEL" --cache-type-k "$CACHE_TYPE_K" --cache-type-v "$CACHE_TYPE_V")
     # Omit automatic settings so llama.cpp can adapt to the available hardware.
     if [[ "$CTX_SIZE" != auto ]]; then MODEL_ARGS+=(--ctx-size "$CTX_SIZE"); fi
@@ -203,6 +227,12 @@ build_model_args() {
     if [[ "$DEVICE" != auto ]]; then MODEL_ARGS+=(--device "$DEVICE"); fi
     if [[ "$DEVICE" == none ]]; then MODEL_ARGS+=(--gpu-layers 0);
     elif [[ "$GPU_LAYERS" != auto ]]; then MODEL_ARGS+=(--gpu-layers "$GPU_LAYERS"); fi
+    if [[ "$DEVICE" != none ]]; then
+        for setting in SPLIT_MODE TENSOR_SPLIT FIT_TARGET; do
+            flag=${setting,,}; flag=${flag//_/-}
+            if [[ "${!setting}" != auto ]]; then MODEL_ARGS+=("--$flag" "${!setting}"); fi
+        done
+    fi
     case "$PROMPT_PROCESSING" in
         low-memory) MODEL_ARGS+=(--batch-size 512 --ubatch-size 128) ;;
         large-batch) MODEL_ARGS+=(--batch-size 2048 --ubatch-size 1024) ;;

@@ -258,7 +258,7 @@ set_generation_preset min-p
 build_model_args
 [[ $(printf '%s\n' "${MODEL_ARGS[@]}") == "$planner_args" ]]
 write_profile "$PROFILES_DIR/Generation.conf"
-(( $(wc -l < "$PROFILES_DIR/Generation.conf") == 18 ))
+(( $(wc -l < "$PROFILES_DIR/Generation.conf") == 21 ))
 saved=$(profile_data)
 GENERATION[temperature]=0.8
 [[ $(generation_preset) == custom && $(profile_status) == 'Generation (Modified)' ]]
@@ -296,11 +296,12 @@ rm "$PROFILES_DIR/Generation.conf" "$PROFILES_DIR/Invalid.conf"
 initialize_config "$2"
 CTX_SIZE=8192 PORT=10001 DEVICE=Vulkan0 THREADS=4 GPU_LAYERS=12
 PROMPT_PROCESSING=large-batch CACHE_TYPE_K=q8_0 CACHE_TYPE_V=f16
+SPLIT_MODE=layer TENSOR_SPLIT=2,1 FIT_TARGET=2048,1024
 set_generation_preset focused
 GENERATION[seed]=42 GENERATION[max_tokens]=1024
 write_profile "$PROFILES_DIR/Complete.conf"
 complete=$(profile_data)
-for field in model context port device threads gpu_layers prompt_processing cache_type_k cache_type_v "${GENERATION_KEYS[@]}"; do
+for field in model context port device threads gpu_layers prompt_processing cache_type_k cache_type_v split_mode tensor_split fit_target "${GENERATION_KEYS[@]}"; do
     load_profile "$PROFILES_DIR/Complete.conf"
     before=$(profile_data)
     tracking=$SAVED_PROFILE
@@ -330,6 +331,7 @@ printf 'model=%s\n' "$2" > "$PROFILES_DIR/Minimal.conf"
 load_profile "$PROFILES_DIR/Minimal.conf"
 [[ $CTX_SIZE == auto && $PORT == 9931 && $DEVICE == auto && $THREADS == auto && $GPU_LAYERS == auto ]]
 [[ $PROMPT_PROCESSING == auto && $CACHE_TYPE_K == q4_0 && $CACHE_TYPE_V == q4_0 ]]
+[[ $SPLIT_MODE == auto && $TENSOR_SPLIT == auto && $FIT_TARGET == auto ]]
 for key in "${GENERATION_KEYS[@]}"; do [[ ${GENERATION[$key]} == auto ]]; done
 defaults=$(profile_data)
 [[ $(profile_status) == Minimal ]]
@@ -342,7 +344,7 @@ load_profile "$PROFILES_DIR/Compatible.conf"
 write_profile "$PROFILES_DIR/Resaved.conf"
 [[ $(cat "$CURRENT_PROFILE") == "$complete" ]]
 # Reject malformed input and invalid recognized fields without changing state.
-for value in 'malformed line without separator' 'model=' "model=$2.missing.gguf" 'context=' 'port=' 'device=' 'threads=' 'gpu_layers=' 'prompt_processing=' 'cache_type_k=' 'cache_type_v=' 'temperature=$(touch executed)'; do
+for value in 'malformed line without separator' 'model=' "model=$2.missing.gguf" 'context=' 'port=' 'device=' 'threads=' 'gpu_layers=' 'prompt_processing=' 'cache_type_k=' 'cache_type_v=' 'split_mode=' 'tensor_split=' 'fit_target=' 'temperature=$(touch executed)'; do
     field=${value%%=*}
     while IFS= read -r line; do
         [[ "$line" == "$field="* ]] || printf '%s\n' "$line"
@@ -367,7 +369,8 @@ load_profile "$PROFILES_DIR/Minimal.conf"
 '''
     subprocess.run(['bash','-euo','pipefail','-c',sources+flexible_profiles,'test',str(root),str(model)],
                    env=env | {'MIR_PORT':'11000', 'MIR_CACHE_TYPE_K':'f32', 'MIR_CACHE_TYPE_V':'q8_0',
-                              'MIR_GENERATION_PRESET':'exploratory', 'LLAMA_ARG_CACHE_TYPE_V':'f16'},
+                              'MIR_GENERATION_PRESET':'exploratory', 'LLAMA_ARG_CACHE_TYPE_V':'f16',
+                              'MIR_SPLIT_MODE':'row', 'MIR_TENSOR_SPLIT':'3,1', 'MIR_FIT_TARGET':'4096'},
                    cwd=work, check=True)
     print('PASS: flexible profiles, independent defaults, unknown literal fields, current-only saves and atomic load rejection')
 

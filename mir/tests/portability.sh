@@ -46,6 +46,9 @@ with tempfile.TemporaryDirectory(prefix='mir-portability-') as temporary:
 --gpu-layers N       layers, auto or all
 --batch-size N       batch
 --ubatch-size N      ubatch
+-sm, --split-mode {none,layer,row,tensor}  GPU distribution
+-ts, --tensor-split N0,N1,...  relative proportions
+-fitt, --fit-target MiB0,MiB1,...  fitting margin
 -ctk, --cache-type-k TYPE  KV cache data type for K
     allowed values: f32, f16, bf16, q8_0, q4_0, q4_1, iq4_nl, q5_0, q5_1
 -ctv, --cache-type-v TYPE  KV cache data type for V
@@ -134,6 +137,110 @@ if valid_device "$DEVICE"; then exit 1; fi
     (work / 'queue').write_text(json.dumps([[0,'context'], [0,'custom'], [255,''], [0,'back']]))
     check('initialize_config "$2"; model_menu; [[ $CTX_SIZE == auto ]]')
     print('PASS: automatic/custom context, native environment, bounded validation, multi-device profiles and canceled edits')
+
+
+    # GPU controls must stay optional, literal and independent of CPU fallback.
+    result, args = launch()
+    for flag in ['--split-mode', '--tensor-split', '--fit-target']:
+        assert flag not in args
+    gpu_controls = {'SPLIT_MODE':('layer','--split-mode'),
+                    'TENSOR_SPLIT':('2.5,1','--tensor-split'),
+                    'FIT_TARGET':('2048,1024','--fit-target')}
+    for key, (value, flag) in gpu_controls.items():
+        result, args = launch({'MIR_'+key:value})
+        assert result.returncode == 0 and args[args.index(flag)+1] == value, result.stderr
+        result, args = launch({'LLAMA_ARG_'+key:value})
+        assert result.returncode == 0 and flag not in args
+        result, args = launch({'MIR_'+key:'auto', 'LLAMA_ARG_'+key:value})
+        assert result.returncode == 0 and flag not in args
+        result, args = launch({'MIR_'+key:value, 'LLAMA_ARG_'+key:'invalid'})
+        assert result.returncode == 0 and args[args.index(flag)+1] == value
+        result, args = launch({'MIR_'+key:value, 'MIR_DEVICE':'none', 'TEST_HELP':help_text.replace(flag,'--unavailable')})
+        assert result.returncode == 0 and flag not in args and args[args.index('--gpu-layers')+1] == '0'
+        result, args = launch({'MIR_'+key:value, 'TEST_HELP':help_text.replace(flag,'--unavailable')})
+        assert result.returncode != 0 and flag in result.stderr and not args
+    invalid_gpu = {'SPLIT_MODE':['','bogus','LAYER','$(touch executed)'],
+                   'TENSOR_SPLIT':['','0','0,0.0','-1,2','1,','1,,2','1/2','01,2','nan,1','1e2,1',
+                                   '2147483648,1','1.1234567890,1','$(touch executed)'],
+                   'FIT_TARGET':['','-1','1.5','01','1,','1,,2','2147483648','$(touch executed)']}
+    for key, values in invalid_gpu.items():
+        for value in values:
+            result, args = launch({'MIR_'+key:value})
+            assert result.returncode != 0 and not args, (key,value,result.stderr)
+    for value in ['0,1','0.5,1.25','2147483647,1']:
+        result, args = launch({'MIR_TENSOR_SPLIT':value})
+        assert result.returncode == 0, result.stderr
+    result, args = launch({'MIR_FIT_TARGET':'0'})
+    assert result.returncode == 0
+    for arguments in [['-sm','row','-ts','1,2','-fitt','1024'],
+                      ['--split-mode=row','--tensor-split=1,2','--fit-target=1024']]:
+        check('''initialize_config "$2"
+validate_config
+prepare_server ''' + ' '.join(arguments) + '''
+[[ $EFFECTIVE_SPLIT_MODE == row ]]
+''', {'MIR_SPLIT_MODE':'tensor', 'MIR_TENSOR_SPLIT':'2,1', 'MIR_FIT_TARGET':'2048'})
+    for arguments in [['-ts'], ['--fit-target'], ['--split-mode','bogus']]:
+        result, args = launch(arguments=arguments)
+        assert result.returncode != 0 and not args, arguments
+    result, args = launch(arguments=['--alias','--tensor-split'])
+    assert result.returncode == 0
+    for value in ['0,0','1/2','1e2,1']:
+        result, args = launch(arguments=['--tensor-split',value])
+        assert result.returncode == 0 and args[-2:] == ['--tensor-split',value]
+    result, args = launch({'TEST_HELP':help_text.replace('{none,layer,row,tensor}','{none,layer,future_mode}')}, ['--split-mode','future_mode'])
+    assert result.returncode == 0 and args[-2:] == ['--split-mode','future_mode']
+    result, args = launch({'MIR_SPLIT_MODE':'tensor', 'TEST_HELP':help_text.replace('{none,layer,row,tensor}','{none,layer,row}')})
+    assert result.returncode != 0 and 'not advertised' in result.stderr
+    print('PASS: optional GPU flags, literal ratio/margin validation, native/MIR/CLI priority, CPU fallback and unsupported builds')
+
+    (work / 'queue').write_text(json.dumps([[0,'multiple'],[0,'Vulkan0\nVulkan1']]))
+    check('initialize_config "$2"; select_device; [[ $DEVICE == Vulkan0,Vulkan1 ]]')
+    for status, value in [(255,''),(0,'')]:
+        queue = [[0,'multiple'],[status,value]] + ([[0,'']] if status == 0 else [])
+        (work / 'queue').write_text(json.dumps(queue))
+        check('initialize_config "$2"; DEVICE=Vulkan1,Vulkan0; select_device; [[ $DEVICE == Vulkan1,Vulkan0 ]]')
+    check('''initialize_config "$2"
+DEVICE=Vulkan1,Vulkan0
+server_devices
+ui() { printf '%s\\n' "$@" > "$TEST_ARGS"; printf 'Vulkan1\\nVulkan0'; }
+select_multiple_devices
+[[ $DEVICE == Vulkan1,Vulkan0 ]]
+mapfile -t options < "$TEST_ARGS"
+[[ " ${options[*]} " == *' Vulkan1 Vulkan1: Second GPU on Vulkan0 Vulkan0: First GPU on '* ]]
+''')
+    (work / 'queue').write_text(json.dumps([[0,'mode'],[0,'row'],[0,'proportions'],[0,'2,1'],[0,'margin'],[0,'2048,1024'],[0,'back']]))
+    check('''initialize_config "$2"
+DEVICE=Vulkan0,Vulkan1
+gpu_memory_menu
+[[ $SPLIT_MODE == row && $TENSOR_SPLIT == 2,1 && $FIT_TARGET == 2048,1024 ]]
+write_profile "$PROFILES_DIR/GPU.conf"
+saved=$(profile_data)
+for field in split_mode tensor_split fit_target; do
+    sed "s/^$field=.*/$field=invalid/" "$CURRENT_PROFILE" > "$PROFILES_DIR/Bad.conf"
+    if load_profile "$PROFILES_DIR/Bad.conf"; then exit 1; fi
+    [[ $(profile_data) == "$saved" && $(profile_status) == GPU ]]
+done
+SPLIT_MODE=auto TENSOR_SPLIT=auto FIT_TARGET=auto
+[[ $(profile_status) == 'GPU (Modified)' ]]
+load_profile "$PROFILES_DIR/GPU.conf"
+[[ $(profile_data) == "$saved" && $(profile_status) == GPU ]]
+''')
+    (work / 'queue').write_text(json.dumps([[0,'mode'],[255,''],[0,'proportions'],[255,''],[0,'margin'],[255,''],[0,'back']]))
+    check('initialize_config "$2"; DEVICE=Vulkan0,Vulkan1; gpu_memory_menu; [[ $SPLIT_MODE == auto && $TENSOR_SPLIT == auto && $FIT_TARGET == auto ]]')
+    (work / 'queue').write_text(json.dumps([[0,'mode'],[0,'auto'],[0,'proportions'],[0,'auto'],[0,'margin'],[0,'auto'],[0,'back']]))
+    check('''initialize_config "$2"
+DEVICE=Vulkan0,Vulkan1 SPLIT_MODE=row TENSOR_SPLIT=2,1 FIT_TARGET=2048
+gpu_memory_menu
+[[ $SPLIT_MODE == auto && $TENSOR_SPLIT == auto && $FIT_TARGET == auto ]]
+''', {'TEST_HELP':'--model FNAME\n--port PORT'})
+    check('''initialize_config "$2"
+DEVICE=Vulkan0
+ui() { printf '%s\\n' "$@" > "$TEST_ARGS"; return 255; }
+gpu_memory_menu
+args=$(cat "$TEST_ARGS")
+[[ $args == *'Memory margin'* && $args != *'Split mode'* && $args != *'GPU proportions'* ]]
+''')
+    print('PASS: multi-GPU checklist order/cancellation, advanced menus, single-device visibility and atomic profile tracking')
 
     # The installed build's help is the authority; never reuse draft-cache lists.
     check(r'''initialize_config "$2"
