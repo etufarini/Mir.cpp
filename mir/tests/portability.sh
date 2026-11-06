@@ -46,7 +46,6 @@ with tempfile.TemporaryDirectory(prefix='mir-portability-') as temporary:
 --gpu-layers N       layers, auto or all
 --batch-size N       batch
 --ubatch-size N      ubatch
---reasoning [on|off|auto]    reasoning
 --alias STRING       alias
 --lora-scaled FNAME SCALE   adapter
 --no-webui           Disable the Web UI

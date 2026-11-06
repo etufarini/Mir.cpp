@@ -46,7 +46,7 @@ if [[ ${1:-} == --list-devices ]]; then
 fi
 if [[ ${1:-} == --help ]]; then
     echo 'number of server slots (default: 1)'
-    echo '--model --port --host --ctx-size --device --threads --gpu-layers --batch-size --ubatch-size --reasoning --temperature --top-p --top-k --min-p --repeat-penalty --presence-penalty --frequency-penalty --seed --n-predict'
+    echo '--model --port --host --ctx-size --device --threads --gpu-layers --batch-size --ubatch-size --temperature --top-p --top-k --min-p --repeat-penalty --presence-penalty --frequency-penalty --seed --n-predict'
     exit 0
 fi
 printf '%s\\0' "$@" > "$TEST_ARGS"
@@ -91,12 +91,12 @@ sys.exit(status)
         return result.returncode, result.stdout, error, args_file.read_bytes() if args_file.exists() else None
     cases = [({}, []), ({'LLAMA_DEVICE':'none', 'LLAMA_GPU_LAYERS':'all'}, []),
              ({'LLAMA_THREADS':'4', 'LLAMA_GPU_LAYERS':'12', 'LLAMA_DEVICE':'Vulkan0',
-               'LLAMA_PROMPT_PROCESSING':'large-batch', 'LLAMA_REASONING':'on',
+               'LLAMA_PROMPT_PROCESSING':'large-batch',
                'LLAMA_HOST':'0.0.0.0', 'LLAMA_PORT':'09931'}, ['--ctx-size','8192','--alias','a b']),
              ({'LLAMA_PROMPT_PROCESSING':'low-memory'}, []),
              ({'LLAMA_THREADS':'0'}, []), ({'LLAMA_GPU_LAYERS':'-1'}, []),
              ({'LLAMA_PORT':'65536'}, []), ({'LLAMA_CTX_SIZE':'bad'}, []),
-             ({'LLAMA_REASONING':'bad'}, []), ({'LLAMA_PROMPT_PROCESSING':'bad'}, []),
+             ({'LLAMA_PROMPT_PROCESSING':'bad'}, []),
              ({'TEST_LISTENERS':'LISTEN 0 128 0.0.0.0:9931 0.0.0.0:*\n'}, []),
              ({'TEST_EXIT':'7'}, [])]
     for index, (overrides, arguments) in enumerate(cases):
@@ -108,7 +108,7 @@ sys.exit(status)
         code, _, error, args = results[0]
         if index < 4:
             assert code == 0 and args, (index, results)
-        elif index < 11:
+        elif index < 10:
             assert code == 1 and args is None and error, (index, results)
         else:
             assert code == 7, results
@@ -166,7 +166,7 @@ sys.exit(status)
     sources = 'MIR_ROOT=$1; source "$MIR_ROOT/tests/helpers/core.sh"; load_test_core fake\n'
     # Compare resolved controls and paths as well as launch arguments.
     control_values = {'LLAMA_CPP_DIR': str(server_dir), 'MODELS_DIR': str(models),
-                      'CTX_SIZE': '8192', 'REASONING': 'on', 'PORT': '10002',
+                      'CTX_SIZE': '8192', 'PORT': '10002',
                       'DEVICE': 'none', 'THREADS': '3', 'GPU_LAYERS': '12',
                       'PROMPT_PROCESSING': 'low-memory', 'HOST': '::1',
                       'GENERATION_PRESET': 'focused', 'TEMPERATURE': '0.7',
@@ -258,6 +258,7 @@ set_generation_preset min-p
 build_model_args
 [[ $(printf '%s\n' "${MODEL_ARGS[@]}") == "$planner_args" ]]
 write_profile "$PROFILES_DIR/Generation.conf"
+(( $(wc -l < "$PROFILES_DIR/Generation.conf") == 16 ))
 saved=$(profile_data)
 GENERATION[temperature]=0.8
 [[ $(generation_preset) == custom && $(profile_status) == 'Generation (Modified)' ]]
@@ -268,7 +269,7 @@ GENERATION[seed]=8
 GENERATION[seed]=7
 [[ $(profile_status) == Generation ]]
 before=$(profile_data)
-for field in "${GENERATION_KEYS[@]}"; do
+for field in model context port device threads gpu_layers prompt_processing "${GENERATION_KEYS[@]}"; do
     while IFS= read -r line; do
         [[ "$line" == "$field="* ]] || printf '%s\n' "$line"
     done < "$PROFILES_DIR/Generation.conf" > "$PROFILES_DIR/Incomplete.conf"
@@ -283,25 +284,27 @@ for value in 'temperature=nan' 'top_p=2' 'seed=4294967296' 'max_tokens=-2'; do
     if load_profile "$PROFILES_DIR/Invalid.conf"; then exit 1; fi
     [[ $(profile_data) == "$before" && $(profile_status) == Generation ]]
 done
-head -n 8 "$PROFILES_DIR/Generation.conf" > "$PROFILES_DIR/Legacy.conf"
-load_profile "$PROFILES_DIR/Legacy.conf"
-[[ $(generation_preset) == default && ${GENERATION[seed]} == auto && ${GENERATION[max_tokens]} == auto ]]
-[[ $(profile_status) == Legacy ]]
-(( $(wc -l < "$PROFILES_DIR/Legacy.conf") == 8 ))
+head -n 7 "$PROFILES_DIR/Generation.conf" > "$PROFILES_DIR/Incomplete.conf"
+if load_profile "$PROFILES_DIR/Incomplete.conf"; then exit 1; fi
+[[ $(profile_data) == "$before" && $(profile_status) == Generation ]]
+cat "$PROFILES_DIR/Generation.conf" > "$PROFILES_DIR/Invalid.conf"
+printf 'unexpected=auto\n' >> "$PROFILES_DIR/Invalid.conf"
+if load_profile "$PROFILES_DIR/Invalid.conf"; then exit 1; fi
+[[ $(profile_data) == "$before" && $(profile_status) == Generation ]]
 # Invalid or canceled edits preserve all saved values and tracking.
 message() { :; }
 ui() { printf 'bad'; }
 before=$(profile_data)
 edit_generation_value temperature
-[[ $(profile_data) == "$before" && $(profile_status) == Legacy ]]
+[[ $(profile_data) == "$before" && $(profile_status) == Generation ]]
 ui() { return 255; }
 edit_generation_value seed
 generation_menu
-[[ $(profile_data) == "$before" && $(profile_status) == Legacy ]]
-rm "$PROFILES_DIR/Generation.conf" "$PROFILES_DIR/Incomplete.conf" "$PROFILES_DIR/Invalid.conf" "$PROFILES_DIR/Legacy.conf"
+[[ $(profile_data) == "$before" && $(profile_status) == Generation ]]
+rm "$PROFILES_DIR/Generation.conf" "$PROFILES_DIR/Incomplete.conf" "$PROFILES_DIR/Invalid.conf"
 '''
     subprocess.run(['bash','-euo','pipefail','-c',sources+generation_checks,'test',str(root),str(model)],env=env,check=True)
-    print('PASS: generation profile round-trip, Modified tracking, legacy defaults, rollback, cancellation and planner isolation')
+    print('PASS: sixteen-field profiles, required fields, Modified tracking, rollback, cancellation and planner isolation')
 
     summary_checks = r'''
 initialize_config "$2"
@@ -315,13 +318,13 @@ printf -v MEMORY_TEXT '%-72s' 'Est. free GiB: RAM 16.3 | GPU 1.5'
 before=$(profile_data)
 mapfile -t lines < <(configuration_summary)
 [[ ${#lines[@]} == 6 && ${lines[0]} == *'(Modified)' ]]
-[[ ${lines[1]} == *'...'*model.gguf && ${lines[2]} == *'4K'*'Reasoning  Auto' ]]
+[[ ${lines[1]} == *'...'*model.gguf && ${lines[2]} == 'Context       4K' ]]
 [[ ${lines[3]} == Device* && ${lines[4]} == 'Port          9931: IN USE' ]]
 for line in "${lines[@]}"; do (( ${#line} <= 72 )); done
 [[ $(profile_data) == "$before" ]]
 for CTX_SIZE in auto 0 4096 12345 2147483647; do
     mapfile -t lines < <(configuration_summary)
-    [[ ${lines[2]:38} == 'Reasoning  Auto' ]]
+    [[ ${lines[2]} == "Context       $(context_label)" ]]
     (( ${#lines[2]} <= 72 ))
 done
 MODEL=''
@@ -337,8 +340,9 @@ MODEL=''
     (legacy / 'profiles').mkdir()
     paths_data = f'llama_dir={server_dir}\nmodels_dir={models}\n'
     (legacy / 'paths.conf').write_text(paths_data)
-    profile_data = (f'model={model}\ncontext=4096\nreasoning=auto\nport=9931\n'
-                    'device=auto\nthreads=auto\ngpu_layers=auto\nprompt_processing=auto\n').encode()
+    profile_data = (f'model={model}\ncontext=4096\nport=9931\n'
+                    'device=auto\nthreads=auto\ngpu_layers=auto\nprompt_processing=auto\n'
+                    + ''.join(f'{key}=auto\n' for key in [*sampling, 'seed', 'max_tokens'])).encode()
     (legacy / 'profiles/Old.conf').write_bytes(profile_data)
     migration_env = {k:v for k,v in env.items() if k not in ('LLAMA_CPP_DIR','LLAMA_MODELS_DIR')}
     migration_env.update(XDG_CONFIG_HOME=str(migration_base), TEST_SERVER_DIR=str(server_dir), TEST_MODELS_DIR=str(models))
@@ -442,6 +446,12 @@ initialize_config "$2"
                 title = args[args.index('--title')+1].strip()
                 assert title and 'Mir.cpp' not in title and 'STATION CONTROL' not in title
             menus = [args for args in dialogs if '--menu' in args]
+            model_menus = [args for args in menus if args[args.index('--title')+1] == ' Model settings ']
+            assert model_menus
+            for args in model_menus:
+                index = args.index('--menu')
+                assert args[index+4] == '4'
+                assert args[index+5::2] == ['model','context','generation','back']
             assert all(args[args.index('--ok-label')+1] == 'Select' for args in menus)
             for args in menus:
                 cancel = [value for key, value in zip(args, args[1:]) if key == '--cancel-label'][-1]

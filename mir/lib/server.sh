@@ -105,7 +105,6 @@ prepare_server() {
     build_model_args
     ARGS=("${MODEL_ARGS[@]}" --port "$PORT")
     if [[ -n "$SERVER_HOST" ]]; then ARGS+=(--host "$SERVER_HOST"); fi
-    if [[ "$REASONING" != auto ]]; then ARGS+=(--reasoning "$REASONING"); fi
     # Sampling belongs to server defaults, never to the memory planner.
     for key in "${GENERATION_KEYS[@]}"; do
         [[ "${GENERATION[$key]}" != auto ]] || continue
@@ -179,7 +178,7 @@ run_server() {
         LOG_FILE=$(mktemp "${TMPDIR:-/tmp}/mir.cpp.XXXXXXXX")
         "$SERVER" "${ARGS[@]}" >"$LOG_FILE" 2>&1 &
     else
-        printf 'Model: %s\nReasoning: %s\nContext: %s\nWeb UI: %s\n' "$MODEL" "$REASONING" "$(context_label)" "$URL"
+        printf 'Model: %s\nContext: %s\nWeb UI: %s\n' "$MODEL" "$(context_label)" "$URL"
         printf 'Device: %s | CPU threads: %s | GPU layers: %s | Prompt processing: %s\nStop with Ctrl+C.\n' \
             "$DEVICE" "$THREADS" "$GPU_LAYERS" "$PROMPT_PROCESSING"
         "$SERVER" "${ARGS[@]}" &

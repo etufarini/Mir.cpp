@@ -29,8 +29,6 @@ display_value() {
     case "$1" in
         auto) printf '%s' "${2:-Auto}" ;;
         none) printf 'CPU only' ;;
-        on) printf On ;;
-        off) printf Off ;;
         all) printf All ;;
         low-memory) printf 'Low memory' ;;
         large-batch) printf 'Large batch' ;;
