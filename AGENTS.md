@@ -20,6 +20,26 @@ Treat `mir/sh/install.sh` as a generated standalone artifact. Edit `install-core
 
 The launcher targets Linux with CPU, Vulkan and CUDA builds of llama.cpp, and macOS with CPU and Metal builds. CUDA compatibility is expected from the existing generic device support, but validation on NVIDIA hardware is still pending; do not describe it as hardware-verified until those checks pass. macOS support requires Bash 4.4 or newer and the documented Homebrew launcher dependencies. Bootstrap with syntax accepted by macOS Bash 3.2, automatically finding compatible Homebrew Bash and tools for source, piped installer and installed-command startup. Never require users to change their login shell or shell configuration; dependency PATH additions must stay within the program process and preserve existing command precedence. Distinguish simulated tests, native device discovery and actual inference validation; do not claim hardware coverage beyond the checks performed. Keep device discovery delegated to the installed llama.cpp; the documented release scope must not introduce hardcoded backend names or restrict otherwise valid model and device arguments.
 
+## Release and verification policy
+
+Mir.cpp is a non-critical local application. Prefer small, frequent releases and verification proportional to the impact of each change. Do not require exhaustive combinations of operating systems, hardware, drivers, llama.cpp versions, models and settings, or mandatory coverage percentages. Use representative cases, boundary values and relevant setting interactions; combinatorial testing can help when interactions matter.
+
+Choose checks from the changed behavior and its direct and indirect dependencies:
+
+| Change | Verification |
+| --- | --- |
+| Documentation or comments only | Check accuracy, links and consistency; confirm comment edits do not change executable content. No new hardware tests are required. |
+| TUI | Run affected tests and visually inspect changed screens, including navigation and 80×24 readability. |
+| Configuration or server arguments | Test validation, precedence and compatibility; perform a real smoke test when startup behavior changes. |
+| Platform adapters or GPU settings | Run affected adapter tests and, when available, test the affected backend on real hardware. Disclose unavailable validation. |
+| Installation, migration, deletion or process management | Check isolation, preservation of user data, process identity where relevant, and failure paths in addition to normal operation. |
+
+Keep Linux and macOS CI checks. For releases that change runtime behavior, require successful CI on the candidate commit, relevant regression checks and a brief real smoke test of affected flows on available machines. For server startup changes, exercise startup, a small inference request, browser access and shutdown with a supported model. Reuse earlier hardware results only when the changes do not invalidate them; identify them as earlier results rather than new tests. Local checks need not repeat successful CI or unrelated hardware tests without a concrete reason.
+
+Unavailable hardware does not automatically block a release. Distinguish tested configurations, expected compatibility and known problems. Record checks performed and limitations briefly in release notes; for inference tests, identify the OS, hardware/backend, llama.cpp version and model. A discovery probe or fixture is not an inference test. Known defects that can lose user data or signal an unintended process block release until fixed.
+
+Use an optional GitHub prerelease for broad or uncertain changes when user feedback would help; do not require a beta for every fix or ordinary release. Keep unverified claims explicit rather than treating a beta label as evidence of correctness. Installing a specific tagged release is separate from this policy: the current installer downloads `main`, so publishing a tag or prerelease does not change what it installs.
+
 ## TUI organization
 
 Keep the main menu in this order: Launch server, Model settings, Performance, Server & port, Saved configurations, Folders and Quit. Initially select Launch server, preserving all launch validation. Show the current configuration, model, compact context, device and port status above these entries. Hide internal menu tags and display readable values while preserving stored values and command-line arguments. Keep menus readable at 80×24 characters. Group model selection, context, KV Cache and Generation under Model settings; group port editing, status refresh and stopping an occupying process under Server & port. Keep complete process details available there and in shutdown confirmations. Order saved configuration actions as Load configuration, Update current, Save as new configuration, Delete configuration and Back, keeping deletion after the other operations.
@@ -86,7 +106,7 @@ Keep installation steps, paths, menu labels, defaults and examples aligned with 
 
 ## General model compatibility
 
-The launcher MUST WORK WITH EVERY GGUF MODEL supported by the installed llama.cpp version and the available hardware. Model architecture, context limits, chat templates and memory requirements vary: respect those capabilities and report unsupported configurations clearly.
+Aim for general compatibility with GGUF models supported by the installed llama.cpp version and the available hardware, without launcher-specific restrictions. This is a design goal, not a guarantee that every model and hardware combination has been tested. Model architecture, context limits, chat templates and memory requirements vary: respect those capabilities and report unsupported configurations clearly.
 
 Do not hardcode behavior for a particular model, family, filename or directory layout. Do not assume that every model supports the same context length. Preserve configuration options so other GGUF models can be used without editing the script. A model that exceeds hardware resources or is unsupported by llama.cpp cannot be made compatible by the launcher alone.
 
@@ -98,11 +118,11 @@ Read-only inspection is allowed. Before editing, present the proposed changes an
 
 ## Mandatory final code elision
 
-At the end of every development task, the developer MUST APPLY CODE ELISION: review the code and remove redundant, unused or unnecessary portions while preserving required functionality, model compatibility and clear error handling.
+At the end of every development task, review the changed portions and their relevant dependencies for redundant, unused or unnecessary content. Remove it within the approved scope while preserving required functionality, model compatibility and clear error handling. Do not expand the task into unrelated refactoring or a repository-wide cleanup. Documentation-only tasks need no code cleanup.
 
 Include this cleanup in the proposed changes submitted for approval. If further cleanup is discovered after approval, present it and wait for approval before applying it. Do not remove useful validation or configuration merely to shorten the script. If no removable code remains, state that the review found none.
 
-Verify the approved result with Bash syntax checks and ShellCheck when available, plus focused checks appropriate to the changed behavior. Report the changes, verification results and any remaining limitations.
+When shell code changes, verify it with Bash syntax checks and ShellCheck when available, plus focused checks appropriate to the changed behavior. For documentation-only changes, check accuracy, links and consistency instead. Follow the release and verification policy for additional checks. Report the changes, verification results and any remaining limitations.
 
 ## Mir.cpp identity and compatibility
 
