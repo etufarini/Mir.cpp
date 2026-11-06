@@ -24,7 +24,7 @@ edit_generation_value() {
         repeat_penalty) hint='Positive decimal; 1 disables. Large penalties can harm output.' ;;
         presence_penalty|frequency_penalty) hint='Signed decimal; 0 disables. Penalties can harm useful repetition.' ;;
         seed) hint='Integer from 0 to 4294967295; -1 or 4294967295 selects random.\nIdentical output across devices or runs is not guaranteed.' ;;
-        max_tokens) hint='Integer from 0 to 2147483647, or -1 for no fixed limit.\n0 evaluates input only. A short limit can cut off thinking or answers.' ;;
+        max_tokens) hint='Integer from 0 to 2147483647, or -1 for no fixed limit.\n0 evaluates input only. A short limit can cut off an answer.' ;;
     esac
     if choice=$(ui --cancel-label Back --inputbox "$hint\n\nUse auto to leave the llama.cpp default unchanged." 13 80 "${GENERATION[$key]}"); then
         if valid_generation_value "$key" "$choice"; then GENERATION[$key]=$choice;
@@ -57,7 +57,7 @@ generation_menu() {
             max_tokens "Maximum output tokens  $(display_value "${GENERATION[max_tokens]}" Default)" back Back) || return 0
         case "$action" in
             preset)
-                if choice=$(UI_TITLE='Generation preset' menu --default-item "$(generation_preset)" --menu 'Starting points to test, not guarantees of quality.\nNo preset changes context, reasoning or hardware settings.' 18 80 5 \
+                if choice=$(UI_TITLE='Generation preset' menu --default-item "$(generation_preset)" --menu 'Starting points to test, not guarantees of quality.\nNo preset changes context or hardware settings.' 18 80 5 \
                     default 'Default       Keep native sampling defaults' \
                     focused 'Focused       Temp 0.6; Top-P 0.95; Top-K 20' \
                     exploratory 'Exploratory   Temp 1; Top-P 0.95; Top-K 20' \
@@ -116,9 +116,8 @@ performance_menu() {
 model_menu() {
     local action=model choice selected i UI_TITLE='Model settings'
     while true; do
-        action=$(menu --default-item "$action" --menu 'Context includes input and output. Larger contexts need more memory.\nContext size and reasoning depend on model support.' 18 80 5 \
+        action=$(menu --default-item "$action" --menu 'Context includes input and output. Larger contexts need more memory.\nContext size depends on model support.' 18 80 4 \
             model "Model         $(compact_text "${MODEL##*/}")" context "Context       $(context_label)" \
-            reasoning "Reasoning     $(display_value "$REASONING")" \
             generation "Generation    $(display_value "$(generation_preset)")" back Back) || return 0
         case "$action" in
             model)
@@ -140,8 +139,6 @@ model_menu() {
                         fi
                     else CTX_SIZE=$choice; fi
                 fi ;;
-            reasoning)
-                if choice=$(UI_TITLE=Reasoning menu --default-item "$REASONING" --menu 'Reasoning depends on model support' 12 64 3 auto Automatic off Off on On); then REASONING="$choice"; fi ;;
             generation) generation_menu ;;
             back) return 0 ;;
         esac

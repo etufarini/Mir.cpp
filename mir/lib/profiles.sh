@@ -2,8 +2,8 @@
 
 profile_data() {
     local key
-    printf 'model=%s\ncontext=%s\nreasoning=%s\nport=%s\ndevice=%s\nthreads=%s\ngpu_layers=%s\nprompt_processing=%s\n' \
-        "$MODEL" "$CTX_SIZE" "$REASONING" "$PORT" "$DEVICE" "$THREADS" "$GPU_LAYERS" "$PROMPT_PROCESSING"
+    printf 'model=%s\ncontext=%s\nport=%s\ndevice=%s\nthreads=%s\ngpu_layers=%s\nprompt_processing=%s\n' \
+        "$MODEL" "$CTX_SIZE" "$PORT" "$DEVICE" "$THREADS" "$GPU_LAYERS" "$PROMPT_PROCESSING"
     for key in "${GENERATION_KEYS[@]}"; do printf '%s=%s\n' "$key" "${GENERATION[$key]}"; done
 }
 
@@ -23,23 +23,15 @@ load_profile() {
         [[ "$line" == *=* ]] || return 1
         key="${line%%=*}"
         case "$key" in
-            model|context|reasoning|port|device|threads|gpu_layers|prompt_processing|temperature|top_p|top_k|min_p|repeat_penalty|presence_penalty|frequency_penalty|seed|max_tokens) ;;
+            model|context|port|device|threads|gpu_layers|prompt_processing|temperature|top_p|top_k|min_p|repeat_penalty|presence_penalty|frequency_penalty|seed|max_tokens) ;;
             *) return 1 ;;
         esac
         [[ ! -v "settings[$key]" ]] || return 1
         settings[$key]="${line#*=}"
     done < "$file"
-    # Legacy profiles contain eight fields. New profiles require the full block.
-    if (( ${#settings[@]} == 8 )); then
-        for key in "${GENERATION_KEYS[@]}"; do
-            [[ ! -v "settings[$key]" ]] || return 1
-            settings[$key]=auto
-        done
-    fi
-    (( ${#settings[@]} == 17 )) || return 1
+    (( ${#settings[@]} == 16 )) || return 1
     [[ -f "${settings[model]}" && "${settings[model],,}" == *.gguf ]] || return 1
     valid_context "${settings[context]}" || return 1
-    case "${settings[reasoning]}" in auto|on|off) ;; *) return 1 ;; esac
     valid_port "${settings[port]}" || return 1
     valid_device "${settings[device]}" || return 1
     valid_threads "${settings[threads]}" || return 1
@@ -48,7 +40,6 @@ load_profile() {
     for key in "${GENERATION_KEYS[@]}"; do valid_generation_value "$key" "${settings[$key]}" || return 1; done
     MODEL="${settings[model]}"
     CTX_SIZE="${settings[context]}"
-    REASONING="${settings[reasoning]}"
     PORT=$((10#${settings[port]}))
     DEVICE="${settings[device]}"
     THREADS="${settings[threads]}"

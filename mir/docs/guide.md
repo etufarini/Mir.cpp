@@ -56,14 +56,14 @@ move between buttons. **Back** or **Esc** cancels a setting or returns from a
 submenu. **Quit** or **Esc** on the main screen exits. Menus remember the selected
 entry and highlight the current value where available.
 
-The main screen shows the current configuration, model, context, reasoning,
+The main screen shows the current configuration, model, context,
 device, port status and estimated free memory. Long names are shortened only for
 display. All seven actions fit an 80×24 terminal:
 
 | Menu | Purpose |
 | --- | --- |
 | Launch server | Start the model with the displayed settings. |
-| Model settings | Select a model, context, reasoning and generation settings. |
+| Model settings | Select a model, context and generation settings. |
 | Performance | Select devices, CPU threads, GPU layers and prompt processing. |
 | Server & port | Edit the port, refresh status, inspect or stop listeners. |
 | Saved configurations | Load, update, save or delete settings. |
@@ -177,13 +177,12 @@ Use the same `XDG_DATA_HOME` to manage them later.
 
 ## Model and performance settings
 
-Under **Model settings**, choose a model, context and reasoning. **Auto** context
-omits the context argument, leaving native model, environment and memory choices
-in effect. Fixed choices range from 4K to 256K (1K = 1024 tokens). **Custom** accepts
-`auto` or 0–2147483647 tokens; `0` requests full model context and may need much
-more memory. Context includes input and output. Reasoning accepts **Auto**,
-**Off** or **On**; Auto leaves the server default unchanged. Available context and
-reasoning behavior depend on the model and installed llama.cpp.
+Under **Model settings**, choose a model, context and generation settings.
+**Auto** context omits the context argument, leaving native model, environment
+and memory choices in effect. Fixed choices range from 4K to 256K (1K = 1024
+tokens). **Custom** accepts `auto` or 0–2147483647 tokens; `0` requests full model
+context and may need much more memory. Context includes input and output. Available context sizes depend
+on the model and installed llama.cpp.
 
 Start with **Auto** and **Default** under **Performance**:
 
@@ -250,7 +249,7 @@ Open **Model settings → Generation → Preset**:
 Default omits sampling arguments. The three explicit presets set repeat penalty
 to 1 and presence/frequency penalties to 0. They are manual starting points, with
 no model-family detection or quality guarantee. Applying one preserves context,
-reasoning, performance, seed and output length. The label follows the exact
+performance, seed and output length. The label follows the exact
 sampling values; other combinations show **Custom**.
 
 **Sampling parameters** edits all seven values. Temperature controls randomness;
@@ -264,7 +263,7 @@ below.
 A fixed seed helps comparisons but does not guarantee identical results across
 hardware or settings. **Maximum output tokens** accepts **auto**, **-1** for no
 fixed generation limit, or 0–2147483647. Zero evaluates input without generating
-an answer. This limit is separate from context; short limits can cut off reasoning.
+an answer. This limit is separate from context; short limits can truncate output.
 
 Terminal choices take effect at server launch. Browser chat settings and API
 requests can override server defaults. Clear explicit browser sampling values to
@@ -291,11 +290,10 @@ the label to **Not saved**.
 
 Profiles are plain `key=value` files under
 `${XDG_CONFIG_HOME:-$HOME/.config}/mir.cpp/profiles/`; back up this folder to retain
-them. Each stores 17 fields: model, context, reasoning, port, device, threads,
-GPU layers, prompt processing and nine generation values. Legacy eight-field
-profiles load with all generation values reset to auto. Partial or invalid
-profiles and missing models leave current settings unchanged. Saved devices are
-checked against the current server before launch.
+them. Each stores 16 fields: model, context, port, device, threads, GPU layers,
+prompt processing and nine generation values. All fields are required. Partial
+or invalid profiles and missing models leave current settings unchanged. Saved
+devices are checked against the current server before launch.
 
 Profiles exclude conversations, trailing arguments and unrelated environment
 settings. Global folder paths are stored separately; changing the models folder
@@ -319,7 +317,7 @@ port again immediately before launch.
 Passing a model path starts directly without the TUI:
 
 ```bash
-MIR_CTX_SIZE=8192 MIR_REASONING=auto MIR_PORT=9931 \
+MIR_CTX_SIZE=8192 MIR_PORT=9931 \
     ~/.local/bin/mir "/path/to/model.gguf"
 ```
 
@@ -331,7 +329,6 @@ currently displayed paths.
 | --- | --- |
 | `MIR_LLAMA_CPP_DIR`, `MIR_MODELS_DIR` | Folder paths; saved paths when available. |
 | `MIR_CTX_SIZE` | `auto` or 0–2147483647; `auto`. Zero requests full model context. |
-| `MIR_REASONING` | `auto`, `on`, `off`; `auto`. |
 | `MIR_PORT` | 1–65535; `9931`. |
 | `MIR_HOST` | Explicit server bind address; otherwise native host settings or `127.0.0.1`. |
 | `MIR_DEVICE` | `auto`, `none` (CPU only), or comma-separated discovered device names; `auto`. |

@@ -88,7 +88,6 @@ initialize_config() {
     SERVER=$(server_path "$LLAMA_CPP_PATH")
     MODEL="${1:-}"
     read_launcher_control CTX_SIZE CTX_SIZE "${LLAMA_CTX_SIZE:-auto}"
-    read_launcher_control REASONING REASONING "${LLAMA_REASONING:-auto}"
     read_launcher_control PORT PORT "${LLAMA_PORT:-9931}"
     read_launcher_control DEVICE DEVICE "${LLAMA_DEVICE:-auto}"
     read_launcher_control THREADS THREADS "${LLAMA_THREADS:-auto}"
@@ -126,7 +125,6 @@ validate_config() {
     PORT=$((10#$PORT))
     valid_context "$CTX_SIZE" || fail 'MIR_CTX_SIZE must be auto or an integer from 0 to 2147483647 (0 requests the full model context).'
     valid_device "$DEVICE" || fail 'MIR_DEVICE must be auto, none or a comma-separated list of device names.'
-    [[ "$REASONING" == auto || "$REASONING" == on || "$REASONING" == off ]] || fail 'MIR_REASONING must be auto, on or off.'
     valid_threads "$THREADS" || fail 'MIR_THREADS must be auto or a positive integer (up to 2147483647).'
     valid_layers "$GPU_LAYERS" || fail 'MIR_GPU_LAYERS must be auto, all or a nonnegative integer (up to 2147483647).'
     case "$PROMPT_PROCESSING" in

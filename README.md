@@ -56,9 +56,9 @@ If the command is not found, use `~/.local/bin/mir` or add `~/.local/bin` to you
 4. Select **Launch server**. The browser opens when ready, normally at
    `http://127.0.0.1:9931`. Keep the terminal open while chatting.
 
-[<img src="mir/docs/screenshots/model-settings.png" alt="Model settings menu with model, context, reasoning and generation controls" width="640">](mir/docs/screenshots/model-settings.png)
+[<img src="mir/docs/screenshots/model-settings.png" alt="Model settings menu with model, context and generation controls" width="640">](mir/docs/screenshots/model-settings.png)
 
-*Context size and reasoning depend on model support. Larger contexts need more memory.*
+*Choose a supported context size. Larger contexts need more memory.*
 
 Terminal settings configure the server; browser chat settings can override generation defaults.
 Use **View log** if loading fails and **Stop server** when finished. Closing the browser

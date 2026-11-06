@@ -3,9 +3,8 @@
 configuration_summary() {
     local port_status=${PORT_STATUS%%$'\n'*}
     printf '%-14s%s\n' Configuration "$(compact_text "$(profile_status)")" \
-        Model "$(compact_text "${MODEL##*/}")"
-    printf '%-14s%-24sReasoning  %s\n' Context "$(context_label)" "$(display_value "$REASONING")"
-    printf '%-14s%s\n' Device "$(compact_text "$(display_value "$DEVICE")")" \
+        Model "$(compact_text "${MODEL##*/}")" Context "$(context_label)" \
+        Device "$(compact_text "$(display_value "$DEVICE")")" \
         Port "${port_status#Port }"
     printf '%s' "$MEMORY_TEXT"
 }
