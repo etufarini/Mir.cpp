@@ -2,7 +2,7 @@
 # Enforce the platform boundary and Linux startup without any macOS files.
 set -euo pipefail
 TEST_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
-python3 - "$TEST_ROOT" <<'PY'
+python3 -I - "$TEST_ROOT" <<'PY'
 import os
 from pathlib import Path
 import re

@@ -2,7 +2,7 @@
 # Isolated build/update and package-manager checks; no real packages or models.
 set -euo pipefail
 TEST_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
-python3 - "$TEST_ROOT" "${1:-linux}" <<'PY'
+python3 -I - "$TEST_ROOT" "${1:-linux}" <<'PY'
 import hashlib
 import io
 import json
@@ -38,9 +38,11 @@ with tempfile.TemporaryDirectory(prefix='mir-build-test-') as temporary:
 
     executable('git', '''#!/usr/bin/env bash
 if [[ $* == *rev-parse* ]]; then
+    if [[ $* == *--verify* ]]; then printf 'tag\\n' >> "$TEST_WORK/build.events"; fi
     [[ $* != *--verify* || ${TEST_NOT_TAG:-0} == 0 ]] || exit 1
     printf '%040d\\n' 1; exit
 fi
+printf 'clone\\n' >> "$TEST_WORK/build.events"
 [[ ${TEST_CLONE_FAIL:-0} == 0 ]] || exit 1
 printf '%s\\0' "$@" >> "$TEST_WORK/git.args"
 if [[ ${TEST_SLOW:-0} == 1 ]]; then
@@ -57,12 +59,16 @@ elif [[ ${TEST_NO_UI:-0} == 0 ]]; then echo '<html>fixture</html>' > "$target/to
 ''')
     executable('cmake', '''#!/usr/bin/env bash
 printf '%s\\0' "$@" >> "$TEST_WORK/cmake.args"
+if [[ ${1:-} == -S ]]; then event=configure; else event=compile; fi
+printf '%s\\n' "$event" >> "$TEST_WORK/build.events"
 [[ ${TEST_CMAKE_FAIL:-0} == 0 ]] || exit 1
-if [[ $* == *'--target help'* ]]; then echo '... llama-server'; echo '... llama-fit-params'; exit; fi
+[[ ${1:-} != --build || ${TEST_BUILD_FAIL:-0} == 0 ]] || exit 1
+if [[ $* == *'--target help'* ]]; then exit 99; fi
 if [[ ${1:-} == -S ]]; then
     mkdir -p "$4/bin"
     cat > "$4/bin/llama-server" <<'SERVER'
 #!/usr/bin/env bash
+printf 'probe:%s\\n' "${1:-}" >> "$TEST_WORK/build.events"
 [[ ${TEST_PROBE_FAIL:-0} == 0 ]] || exit 1
 if [[ ${TEST_SLOW_PROBE:-0} == 1 ]]; then
     echo "$$" > "$TEST_WORK/probe.pid"
@@ -123,6 +129,30 @@ done
     check('latest_build_tag', {'TEST_NETWORK_FAIL': '1'}, success=False)
     print('PASS: release ordering, prereleases, network errors and literal tag validation')
 
+    check(r'''install_build() { printf '%s\0' "$@" >> "$TEST_WORK/confirmed-builds"; }
+ui() {
+    if [[ $* == *--inputbox* ]]; then
+        [[ ${TEST_CANCEL:-0} == 0 ]] || return 255
+        printf '%s' "$TEST_JOBS"
+    else return "${TEST_CONFIRM:-0}"; fi
+}
+for value in 1 64; do TEST_JOBS=$value; confirm_build v1 cpu; done
+stage=$(mktemp -d "$TEST_WORK/jobs.XXXXXXXX")
+for value in '' 0 01 -1 65 1.5 '1+1' '$(touch executed)'; do
+    TEST_JOBS=$value
+    confirm_build v1 cpu
+    if build_release "$stage" v1 cpu "$value" ''; then exit 1; fi
+done
+[[ ! -e "$stage/source" ]]
+rmdir -- "$stage"
+TEST_JOBS=2 TEST_CONFIRM=1 confirm_build v1 cpu
+TEST_JOBS=2 TEST_CANCEL=1 confirm_build v1 cpu
+''')
+    assert (work / 'confirmed-builds').read_bytes().split(b'\0')[:-1] == [
+        b'v1', b'cpu', b'1', b'v1', b'cpu', b'64']
+    assert not (work / 'git.args').exists() and not (work / 'cmake.args').exists()
+    print('PASS: compiler job boundaries, invalid inputs before checkout and canceled build confirmation')
+
     check('''LLAMA_CPP_PATH="$HOME/external"
 mkdir -p "$LLAMA_CPP_PATH"; echo original > "$LLAMA_CPP_PATH/keep"
 MODEL="$HOME/model.gguf"; touch "$MODEL"
@@ -137,14 +167,15 @@ install_build b2 "$TEST_GPU" 2
 read_build "$LLAMA_CPP_PATH"
 [[ $BUILD_TAG == b2 && $BUILD_BACKEND == "$TEST_GPU" && $BUILD_PREVIOUS == "${first##*/}" ]]
 second=$LLAMA_CPP_PATH
-CAPABILITIES_SERVER=old; MEMORY_KEY=old
+CAPABILITIES_SERVER=old
 activate_build "$first"
-[[ $LLAMA_CPP_PATH == "$first" && -z $CAPABILITIES_SERVER && -z $MEMORY_KEY ]]
+[[ $LLAMA_CPP_PATH == "$first" && -z $CAPABILITIES_SERVER ]]
 activate_build "$second"
 [[ $LLAMA_CPP_PATH == "$second" ]]
 ''')
     assert ('-DGGML_' + gpu.upper() + '=ON\0').encode() in (work / 'cmake.args').read_bytes()
-    assert b'--target\0llama-fit-params\0' in (work / 'cmake.args').read_bytes()
+    assert b'--target\0llama-server\0' in (work / 'cmake.args').read_bytes()
+    assert b'--target\0help\0' not in (work / 'cmake.args').read_bytes()
     if adapter == 'linux':
         check('''stage=$(mktemp -d "$(build_root)/builds/build.XXXXXXXX")
     build_release "$stage" b2 cuda 2 ''
@@ -208,13 +239,23 @@ rm -rf -- "$stage"
     print('PASS: symlinked staging paths resolve consistently for upstream CMake UI packaging')
 
 
-    for failure in ('TEST_CLONE_FAIL', 'TEST_NOT_TAG', 'TEST_CMAKE_FAIL', 'TEST_PROBE_FAIL', 'TEST_NO_UI', 'TEST_NO_DEVICE'):
+    failures = {'TEST_CLONE_FAIL':'clone', 'TEST_NOT_TAG':'tag',
+                'TEST_CMAKE_FAIL':'configure', 'TEST_BUILD_FAIL':'compile',
+                'TEST_PROBE_FAIL':'probe:--version',
+                'TEST_NO_UI':'probe:--list-devices', 'TEST_NO_DEVICE':'probe:--list-devices'}
+    for failure, event in failures.items():
+        (work / 'build.events').unlink(missing_ok=True)
         check('''previous=$LLAMA_CPP_PATH; before=$(cat "$PATHS_FILE")
 count=$(find "$(build_root)/builds" -mindepth 1 -maxdepth 1 -type d | wc -l)
-if install_build broken vulkan 2; then exit 1; fi
+if install_build broken "$TEST_GPU" 2; then exit 1; fi
 [[ $LLAMA_CPP_PATH == "$previous" && $(cat "$PATHS_FILE") == "$before" ]]
 [[ $(find "$(build_root)/builds" -mindepth 1 -maxdepth 1 -type d | wc -l) == "$count" ]]
 ''', {failure: '1'})
+        assert (work / 'build.events').is_file(), (adapter, failure, 'Build stopped before the fixture')
+        assert (work / 'build.events').read_text().splitlines()[-1] == event, failure
+        if failure in ('TEST_NO_UI', 'TEST_NO_DEVICE'):
+            error = 'Web UI assets are missing' if failure == 'TEST_NO_UI' else 'No accelerator is available'
+            assert error in (home / 'data/mir.cpp/llama.cpp/build.log').read_text(), failure
     check('''previous=$LLAMA_CPP_PATH; before=$(cat "$PATHS_FILE")
 save_paths() { return 1; }
 if install_build unsaved cpu 2; then exit 1; fi

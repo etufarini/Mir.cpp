@@ -4,10 +4,15 @@
 
 # Mir.cpp
 
-Run local GGUF models with llama.cpp through a terminal menu on Linux and macOS.
-Choose a model, adjust its settings, save configurations and chat in your browser.
+Install and manage llama.cpp on Linux and macOS through simple terminal menus.
+Choose a local GGUF model, adjust its settings, save configurations and launch
+the chat interface in your browser.
+
+Designed for Linux and macOS users who are comfortable with a terminal and want
+a simple, guided way to set up and run local language models.
+
 Mir.cpp supports Linux with CPU, Vulkan and CUDA builds, and macOS with CPU and Metal.
-CUDA still needs validation on NVIDIA hardware. The name comes from the Mir space station.
+CUDA still needs validation on NVIDIA hardware.
 
 [<img src="mir/docs/screenshots/main-menu.png" alt="Main menu showing the current configuration and launch controls" width="640">](mir/docs/screenshots/main-menu.png)
 
@@ -15,19 +20,18 @@ CUDA still needs validation on NVIDIA hardware. The name comes from the Mir spac
 
 ## Requirements
 
-- Linux or macOS, internet access and a terminal.
+- Internet access and a terminal.
 - On Linux: Bash 4.4 or newer, curl and working HTTPS certificates to start
   the installer. Ubuntu/Debian dependency installation is assisted; other
   distributions require equivalent packages installed manually.
 - On macOS: [Homebrew](https://brew.sh/). The installer starts with the system
   Bash and offers to install compatible Bash and missing launcher dependencies.
 - At least one GGUF model supported by llama.cpp, with enough RAM or GPU memory.
-  Model downloads and GPU drivers are configured separately.
+  Model downloads and any required GPU drivers are configured separately.
 
 The installer asks before installing missing dependencies through apt on
 Ubuntu/Debian or Homebrew on macOS. Only apt operations may require sudo.
-Install llama.cpp from **Folders → Install / update llama.cpp**, or select an
-existing build. macOS compilation also requires Apple's command line tools.
+Compiling llama.cpp on macOS also requires Apple's command line tools.
 See the [official llama.cpp build instructions](https://github.com/ggml-org/llama.cpp/blob/master/docs/build.md)
 for platform and GPU requirements.
 
@@ -53,7 +57,9 @@ If the command is not found, use `~/.local/bin/mir` or add `~/.local/bin` to you
 2. Choose your **Models folder** in **Folders**. Models can be organized in subfolders.
 3. Choose a GGUF from **Model settings → Model**, then review the settings.
    Start with **Auto** and **Default** values; KV Cache defaults to **Q4_0** for K and V.
-4. Select **Launch server**. The browser opens when ready, normally at
+4. Optionally save your settings through
+   **Saved configurations → Save as new configuration**.
+5. Select **Launch server**. The browser opens when ready, normally at
    `http://127.0.0.1:9931`. Keep the terminal open while chatting.
 
 [<img src="mir/docs/screenshots/model-settings.png" alt="Model settings menu with model, context, KV Cache and generation controls" width="640">](mir/docs/screenshots/model-settings.png)

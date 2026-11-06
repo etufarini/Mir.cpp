@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 select_folder() {
-    local current="${1:-$HOME}" choice candidate entry label selected=use show_hidden=false UI_TITLE='Browse folders'
+    local current="${1:-$HOME}" choice=use candidate entry label show_hidden=false UI_TITLE='Browse folders'
     local -a folders options
     [[ -d "$current" && -r "$current" && -x "$current" ]] || current="$HOME"
     current=$(cd -- "$current" && pwd -P) || return 1
@@ -16,9 +16,8 @@ select_folder() {
             folders+=("$entry")
             options+=("${#folders[@]}" "${entry##*/}/")
         done < <(find "$current" -mindepth 1 -maxdepth 1 -print0 | sort -z)
-        choice=$(menu --default-item "$selected" \
+        choice=$(menu --default-item "$choice" \
             --menu "Current folder: $current\n\nActions above; folders below. Enter opens a folder or runs an action.\nChoose Use this folder to confirm; Back/Esc cancels." 22 80 12 "${options[@]}") || return 1
-        selected="$choice"
         case "$choice" in
             use) printf '%s\n' "$current"; return 0 ;;
             hidden) if "$show_hidden"; then show_hidden=false; else show_hidden=true; fi; continue ;;
@@ -33,7 +32,7 @@ select_folder() {
             message 'Choose an existing, readable folder without line breaks.'; continue
         fi
         candidate=$(cd -- "$candidate" && pwd -P) || continue
-        if [[ "$candidate" != "$current" ]]; then current="$candidate"; selected=use; fi
+        if [[ "$candidate" != "$current" ]]; then current="$candidate"; choice=use; fi
     done
 }
 

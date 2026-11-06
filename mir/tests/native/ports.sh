@@ -2,7 +2,7 @@
 # Inspect only sockets owned by this test; never signal any listener.
 set -euo pipefail
 TEST_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
-python3 - "$TEST_ROOT" "$1" <<'PY'
+python3 -I - "$TEST_ROOT" "$1" <<'PY'
 import os
 from pathlib import Path
 import socket

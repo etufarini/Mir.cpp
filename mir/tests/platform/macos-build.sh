@@ -2,7 +2,7 @@
 # macOS dependency and terminal fixtures; no real Homebrew packages are changed.
 set -euo pipefail
 TEST_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
-python3 - "$TEST_ROOT" <<'PY'
+python3 -I - "$TEST_ROOT" <<'PY'
 import fcntl
 import os
 from pathlib import Path

@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Build UI preserves the active installation until checks and saving succeed.
 
 monitor_build() (
     local stage=$1 tag=$2 backend=$3 jobs=$4 previous=$5 pid='' identity='' result interrupted=0
@@ -12,8 +11,7 @@ monitor_build() (
         [[ -z "$pid" ]] || wait "$pid" 2>/dev/null || true
     }
     trap 'result=$?; stop_build; if (( result != 0 )); then rm -rf -- "$stage"; fi' EXIT
-    # Defer exit until the worker identity is known. An interrupted ps must not
-    # leave cleanup waiting for a compiler it has no identity to signal.
+    # Defer exit until worker identity is known, so cleanup can safely stop it.
     trap 'interrupted=130' INT
     trap 'interrupted=143' TERM HUP
     # A separate session lets Cancel terminate the compiler's whole process group.
@@ -65,8 +63,7 @@ install_build() {
     if (( result == 0 )) && activate_build "$stage"; then
         message "llama.cpp $tag ($backend) is ready. Its path was saved automatically.\n\nReview your model and device settings before launching."
     else
-        # The monitor removes failed/interrupted stages; only activation can
-        # fail after it has handed back a successfully verified build.
+        # The monitor removes failed stages; this branch handles activation failure.
         if (( result == 0 )); then rm -rf -- "$stage"; fi
         if (( result == 130 || result == 143 )); then message 'Build canceled. The previous installation was kept.';
         else message 'Build or activation failed. The previous installation was kept. Open View build log for details.'; fi
@@ -103,7 +100,7 @@ choose_build() {
     mapfile -t backends < <(platform_build_backends)
     (( ${#backends[@]} > 0 )) || { message 'Managed llama.cpp builds are not available on this platform yet. Select an existing build in Folders.'; return 0; }
     if read_build "$LLAMA_CPP_PATH"; then backend=$BUILD_BACKEND; fi
-    backend=$(menu --default-item "$backend" --menu 'Choose the backend to compile. GPU builds require working drivers.\nCPU remains available in GPU builds.' 15 80 4 \
+    backend=$(menu --default-item "$backend" --menu "Choose the backend to compile. CPU remains available in GPU builds.\n$(platform_gpu_build_note)" 15 80 4 \
         "${backends[@]}" back Back) || return 0
     [[ "$backend" != back ]] || return 0
     prepare_build_dependencies "$backend" || return 0
@@ -123,7 +120,7 @@ confirm_build() {
     local tag=$1 backend=$2 jobs UI_TITLE='Build llama.cpp'
     valid_build_tag "$tag" || { message 'Invalid release tag. Use letters, digits, dots, underscores or hyphens; start with a letter or digit.'; return 0; }
     jobs=$(ui --cancel-label Back --inputbox 'Parallel compiler jobs (1-64). More jobs use more RAM.\nThis does not change inference CPU threads.' 10 78 2) || return 0
-    [[ "$jobs" =~ ^([1-9]|[1-5][0-9]|6[0-4])$ ]] || { message 'Enter an integer between 1 and 64.'; return 0; }
+    valid_build_jobs "$jobs" || { message 'Enter an integer between 1 and 64.'; return 0; }
     ui --yesno "Download and compile llama.cpp $tag ($backend)?\n\nInstallation: $(compact_text "$(build_root)")\nCompiler jobs: $jobs\n\nThe path is saved after verification. Existing external builds are kept." 15 80 || return 0
     install_build "$tag" "$backend" "$jobs" || true
 }
@@ -133,7 +130,7 @@ build_menu() {
     while true; do
         summary='Using an external build, or no build selected.'
         if read_build "$LLAMA_CPP_PATH"; then summary="Selected: $BUILD_TAG ($BUILD_BACKEND)\nCommit: ${BUILD_COMMIT:0:12}"; fi
-        action=$(menu --default-item "$action" --menu "$summary\n\nBuilds are installed for your user. GPU drivers are configured separately." 19 80 5 \
+        action=$(menu --default-item "$action" --menu "$summary\n\nBuilds are installed for your user.\n$(platform_gpu_build_note)" 19 80 5 \
             install 'Install / change build' update 'Check for updates' restore 'Restore previous build' log 'View build log' back Back) || return 0
         case "$action" in
             install) choose_build ;;

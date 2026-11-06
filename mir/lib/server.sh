@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Trap state stays global until process exit.
 
 server_capabilities() {
     [[ "${CAPABILITIES_SERVER:-}" != "$SERVER" ]] || return 0
@@ -12,7 +11,21 @@ supports_option() {
     [[ "$SERVER_HELP" =~ $pattern ]]
 }
 
-# Read only the selected option's value list, including wrapped help output.
+split_modes() {
+    local line mode
+    local -a modes
+    while IFS= read -r line; do
+        [[ "$line" == *--split-mode* && "$line" == *\{*\}* ]] || continue
+        line=${line#*\{}; line=${line%%\}*}
+        IFS=, read -r -a modes <<< "$line"
+        for mode in "${modes[@]}"; do
+            if [[ "$mode" =~ ^[a-z][a-z0-9_-]*$ ]]; then printf '%s\n' "$mode"; fi
+        done
+        break
+    done <<< "$SERVER_HELP"
+}
+
+# Keep wrapped K/V value lists separate from draft-cache options.
 cache_types() {
     local option="--cache-type-${1,,}" help=${2-$SERVER_HELP} line word active=false values=false
     local pattern="(^|[[:space:],])$option([[:space:]=,]|$)"
@@ -35,46 +48,84 @@ cache_types() {
     done <<< "$help"
 }
 
-cache_type_supported() {
-    local type
-    while IFS= read -r type; do
-        [[ "$type" != "$1" ]] || return 0
+listed_value() {
+    local value
+    while IFS= read -r value; do
+        [[ "$value" != "$1" ]] || return 0
     done <<< "$2"
     return 1
 }
 
 server_devices() {
-    local line
+    local line name description total available
     DEVICE_NAMES=(); DEVICE_DESCRIPTIONS=()
+    GPU_DEVICE_NAMES=()
+    declare -gA DEVICE_FREE=()
     DEVICE_OUTPUT=$(platform_timeout 15 "$SERVER" --list-devices) || return 1
     while IFS= read -r line; do
         if [[ "$line" =~ ^[[:space:]]+([^[:space:]:]+):[[:space:]]+(.+)$ ]]; then
             DEVICE_NAMES+=("${BASH_REMATCH[1]}")
             DEVICE_DESCRIPTIONS+=("${BASH_REMATCH[2]}")
+            name=${BASH_REMATCH[1]}; description=${BASH_REMATCH[2]}
+            # Native device lists may include CPU accelerators with no GPU pool.
+            if [[ "$name" =~ ^[a-zA-Z0-9_.-]+$ && "$description" =~ \(([0-9]{1,10})[[:space:]]MiB,[[:space:]]([0-9]{1,10})[[:space:]]MiB[[:space:]]free\)$ ]]; then
+                total=$((10#${BASH_REMATCH[1]})); available=$((10#${BASH_REMATCH[2]}))
+                if (( total > 0 && available <= total )) && [[ ! -v "DEVICE_FREE[$name]" ]]; then
+                    GPU_DEVICE_NAMES+=("$name")
+                    DEVICE_FREE[$name]=$available
+                fi
+            fi
         fi
     done <<< "$DEVICE_OUTPUT"
 }
 
+multi_gpu_available() {
+    platform_multi_gpu_ui && (( ${#GPU_DEVICE_NAMES[@]} >= 2 ))
+}
+
+gpu_settings_active() {
+    multi_gpu_available || return 1
+    local device=${DEVICE:-auto} name
+    local -a selected
+    local -A unique=()
+    if [[ "$device" == auto ]]; then device=${LLAMA_ARG_DEVICE:-auto}; fi
+    [[ "$device" != auto ]] || return 0
+    IFS=, read -r -a selected <<< "$device"
+    for name in "${selected[@]}"; do
+        [[ " ${GPU_DEVICE_NAMES[*]} " == *" $name "* ]] || return 1
+        unique[$name]=1
+    done
+    (( ${#unique[@]} >= 2 ))
+}
+
+refresh_gpu_settings() {
+    GPU_SETTINGS_ACTIVE=false
+    if platform_multi_gpu_ui && server_devices && gpu_settings_active; then GPU_SETTINGS_ACTIVE=true; fi
+}
+
 launch_error() { LAUNCH_ERROR=$*; return 1; }
 
-# Inspect effective controls without changing forwarded arguments or values.
+# Read overrides for safety checks without rewriting pass-through arguments.
 resolve_endpoint() {
     local host=${SERVER_HOST:-${LLAMA_ARG_HOST:-127.0.0.1}} argument address line pattern count
     EFFECTIVE_DEVICE=${LLAMA_ARG_DEVICE:-auto}
     EFFECTIVE_CACHE_TYPE_K=$CACHE_TYPE_K
     EFFECTIVE_CACHE_TYPE_V=$CACHE_TYPE_V
+    EFFECTIVE_SPLIT_MODE=${LLAMA_ARG_SPLIT_MODE-auto}
     CURL_ARGS=(--noproxy '*' --globoff)
     UNIX_SOCKET=''
     while (( $# )); do
         argument=$1
         case "$argument" in
-            --port|--host|--device|-dev|--cache-type-k|-ctk|--cache-type-v|-ctv)
+            --port|--host|--device|-dev|--cache-type-k|-ctk|--cache-type-v|-ctv|--split-mode|-sm|--tensor-split|-ts|--fit-target|-fitt)
                 (( $# >= 2 )) || { launch_error "Missing value for $argument."; return 1; }
                 case "$argument" in
                     --port) PORT=$2 ;;
                     --host) host=$2 ;;
                     --cache-type-k|-ctk) EFFECTIVE_CACHE_TYPE_K=$2 ;;
                     --cache-type-v|-ctv) EFFECTIVE_CACHE_TYPE_V=$2 ;;
+                    --split-mode|-sm) EFFECTIVE_SPLIT_MODE=$2 ;;
+                    --tensor-split|-ts|--fit-target|-fitt) : ;;
                     *) EFFECTIVE_DEVICE=$2 ;;
                 esac
                 shift ;;
@@ -83,6 +134,7 @@ resolve_endpoint() {
             --device=*|-dev=*) EFFECTIVE_DEVICE=${argument#*=} ;;
             --cache-type-k=*|-ctk=*) EFFECTIVE_CACHE_TYPE_K=${argument#*=} ;;
             --cache-type-v=*|-ctv=*) EFFECTIVE_CACHE_TYPE_V=${argument#*=} ;;
+            --split-mode=*|-sm=*) EFFECTIVE_SPLIT_MODE=${argument#*=} ;;
             -*)
                 # Infer value counts from native help so --alias '--port' stays
                 # data. Leave unknown switches for llama.cpp to interpret.
@@ -139,10 +191,11 @@ prepare_server() {
     [[ -f "$SERVER" && -x "$SERVER" ]] || { launch_error 'llama-server not found. Set the llama.cpp folder in Folders, or use MIR_LLAMA_CPP_DIR.'; return 1; }
     [[ -z "$PATHS_WARNING" || "$TUI" == true ]] || printf '%s\n' "$PATHS_WARNING" >&2
     [[ -f "$MODEL" && -r "$MODEL" ]] || { launch_error "GGUF model missing or unreadable: $MODEL"; return 1; }
+    if "$TUI"; then refresh_gpu_settings; fi
     build_model_args
     ARGS=("${MODEL_ARGS[@]}" --port "$PORT")
     if [[ -n "$SERVER_HOST" ]]; then ARGS+=(--host "$SERVER_HOST"); fi
-    # Sampling belongs to server defaults, never to the memory planner.
+    # Sampling sets server defaults; browser requests may override them.
     for key in "${GENERATION_KEYS[@]}"; do
         [[ "${GENERATION[$key]}" != auto ]] || continue
         flag=${key//_/-}
@@ -167,12 +220,17 @@ prepare_server() {
     fi
     ARGS+=("$@")
     resolve_endpoint "${ARGS[@]}" || return 1
+    types=$(split_modes)
+    if [[ "$EFFECTIVE_DEVICE" != none && "$EFFECTIVE_SPLIT_MODE" != auto && -n "$types" ]] && ! listed_value "$EFFECTIVE_SPLIT_MODE" "$types"; then
+        launch_error "GPU split mode '$EFFECTIVE_SPLIT_MODE' is not advertised by this llama-server. Review Performance > GPU memory."
+        return 1
+    fi
     for key in K V; do
         name="EFFECTIVE_CACHE_TYPE_$key"
         value=${!name}
         valid_cache_type "$value" || { launch_error "Invalid KV cache $key type: $value."; return 1; }
         types=$(cache_types "$key")
-        if [[ -n "$types" ]] && ! cache_type_supported "$value" "$types"; then
+        if [[ -n "$types" ]] && ! listed_value "$value" "$types"; then
             launch_error "KV cache $key type '$value' is not advertised by this llama-server. Choose a supported type under Model settings > KV Cache."
             return 1
         fi
@@ -196,6 +254,7 @@ prepare_server() {
 }
 
 build_model_args() {
+    local setting flag
     MODEL_ARGS=(--model "$MODEL" --cache-type-k "$CACHE_TYPE_K" --cache-type-v "$CACHE_TYPE_V")
     # Omit automatic settings so llama.cpp can adapt to the available hardware.
     if [[ "$CTX_SIZE" != auto ]]; then MODEL_ARGS+=(--ctx-size "$CTX_SIZE"); fi
@@ -203,6 +262,12 @@ build_model_args() {
     if [[ "$DEVICE" != auto ]]; then MODEL_ARGS+=(--device "$DEVICE"); fi
     if [[ "$DEVICE" == none ]]; then MODEL_ARGS+=(--gpu-layers 0);
     elif [[ "$GPU_LAYERS" != auto ]]; then MODEL_ARGS+=(--gpu-layers "$GPU_LAYERS"); fi
+    if [[ "$DEVICE" != none ]] && { ! "$TUI" || "$GPU_SETTINGS_ACTIVE"; }; then
+        for setting in SPLIT_MODE TENSOR_SPLIT FIT_TARGET; do
+            flag=${setting,,}; flag=${flag//_/-}
+            if [[ "${!setting}" != auto ]]; then MODEL_ARGS+=("--$flag" "${!setting}"); fi
+        done
+    fi
     case "$PROMPT_PROCESSING" in
         low-memory) MODEL_ARGS+=(--batch-size 512 --ubatch-size 128) ;;
         large-batch) MODEL_ARGS+=(--batch-size 2048 --ubatch-size 1024) ;;

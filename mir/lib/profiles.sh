@@ -4,6 +4,7 @@ profile_data() {
     local key
     printf 'model=%s\ncontext=%s\nport=%s\ndevice=%s\nthreads=%s\ngpu_layers=%s\nprompt_processing=%s\ncache_type_k=%s\ncache_type_v=%s\n' \
         "$MODEL" "$CTX_SIZE" "$PORT" "$DEVICE" "$THREADS" "$GPU_LAYERS" "$PROMPT_PROCESSING" "$CACHE_TYPE_K" "$CACHE_TYPE_V"
+    printf 'split_mode=%s\ntensor_split=%s\nfit_target=%s\n' "$SPLIT_MODE" "$TENSOR_SPLIT" "$FIT_TARGET"
     for key in "${GENERATION_KEYS[@]}"; do printf '%s=%s\n' "$key" "${GENERATION[$key]}"; done
 }
 
@@ -23,7 +24,7 @@ load_profile() {
         [[ "$line" == *=* ]] || return 1
         key="${line%%=*}"
         case "$key" in
-            model|context|port|device|threads|gpu_layers|prompt_processing|cache_type_k|cache_type_v|temperature|top_p|top_k|min_p|repeat_penalty|presence_penalty|frequency_penalty|seed|max_tokens) ;;
+            model|context|port|device|threads|gpu_layers|prompt_processing|cache_type_k|cache_type_v|split_mode|tensor_split|fit_target|temperature|top_p|top_k|min_p|repeat_penalty|presence_penalty|frequency_penalty|seed|max_tokens) ;;
             *) continue ;;
         esac
         [[ ! -v "settings[$key]" ]] || return 1
@@ -31,7 +32,7 @@ load_profile() {
     done < "$file"
     [[ -v 'settings[model]' ]] || return 1
     # Missing fields use launcher defaults, never values from the current session.
-    for key in context device threads gpu_layers prompt_processing "${GENERATION_KEYS[@]}"; do
+    for key in context device threads gpu_layers prompt_processing split_mode tensor_split fit_target "${GENERATION_KEYS[@]}"; do
         settings[$key]=${settings[$key]-auto}
     done
     settings[port]=${settings[port]-9931}
@@ -42,6 +43,9 @@ load_profile() {
     valid_device "${settings[device]}" || return 1
     valid_threads "${settings[threads]}" || return 1
     valid_layers "${settings[gpu_layers]}" || return 1
+    valid_split_mode "${settings[split_mode]}" || return 1
+    valid_gpu_list ratios "${settings[tensor_split]}" || return 1
+    valid_gpu_list margins "${settings[fit_target]}" || return 1
     valid_cache_type "${settings[cache_type_k]}" && valid_cache_type "${settings[cache_type_v]}" || return 1
     case "${settings[prompt_processing]}" in auto|low-memory|large-batch) ;; *) return 1 ;; esac
     for key in "${GENERATION_KEYS[@]}"; do valid_generation_value "$key" "${settings[$key]}" || return 1; done
@@ -51,6 +55,9 @@ load_profile() {
     DEVICE="${settings[device]}"
     THREADS="${settings[threads]}"
     GPU_LAYERS="${settings[gpu_layers]}"
+    SPLIT_MODE="${settings[split_mode]}"
+    TENSOR_SPLIT="${settings[tensor_split]}"
+    FIT_TARGET="${settings[fit_target]}"
     PROMPT_PROCESSING="${settings[prompt_processing]}"
     CACHE_TYPE_K="${settings[cache_type_k]}"
     CACHE_TYPE_V="${settings[cache_type_v]}"

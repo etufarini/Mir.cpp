@@ -5,6 +5,8 @@ build_root() { printf '%s/mir.cpp/llama.cpp' "${XDG_DATA_HOME:-$HOME/.local/shar
 
 valid_build_tag() { [[ "$1" =~ ^[a-zA-Z0-9][a-zA-Z0-9._-]{0,79}$ ]]; }
 
+valid_build_jobs() { [[ "$1" =~ ^([1-9]|[1-5][0-9]|6[0-4])$ ]]; }
+
 read_build() {
     local path=$1 line key root
     local -A fields=()
@@ -41,8 +43,7 @@ prepare_build_ui() {
     local stage=$1 tag=$2 metadata
     local -a asset fetch=(curl --fail --silent --show-error --location --proto '=https' --tlsv1.2
         --connect-timeout 15 --max-time 180 --retry 1)
-    # A bundled UI already belongs to the checked-out release. Modern upstream
-    # otherwise falls back to latest when shallow Git history reports build 1.
+    # Pin Web UI assets to this release instead of relying on upstream's latest.
     [[ ! -s "$stage/source/tools/ui/dist/index.html" ]] || return 0
     metadata=$("${fetch[@]}" "https://api.github.com/repos/ggml-org/llama.cpp/releases/tags/$tag" |
         python3 -c 'import json, re, sys
@@ -103,13 +104,13 @@ PY
 }
 
 build_release() {
-    local stage=$1 tag=$2 backend=$3 jobs=$4 previous=$5 commit devices targets line name accelerator=false
+    local stage=$1 tag=$2 backend=$3 jobs=$4 previous=$5 commit devices line name accelerator=false
     local -a flags=(-DCMAKE_BUILD_TYPE=Release -DLLAMA_BUILD_SERVER=ON
         -DLLAMA_BUILD_TESTS=OFF -DLLAMA_BUILD_EXAMPLES=OFF
         -DGGML_CUDA=OFF -DGGML_VULKAN=OFF)
     # CMake UI packaging must see one physical path, including through /tmp links.
     stage=$(cd -- "$stage" && pwd -P) || return 1
-    valid_build_tag "$tag" && [[ "$jobs" =~ ^([1-9]|[1-5][0-9]|6[0-4])$ ]] || return 1
+    valid_build_tag "$tag" && valid_build_jobs "$jobs" || return 1
     platform_build_flags "$backend" || return 1
     flags+=("${BUILD_FLAGS[@]}")
     printf 'Downloading llama.cpp %s (%s)...\n' "$tag" "$backend"
@@ -127,12 +128,6 @@ build_release() {
     fi
     cmake -S "$stage/source" -B "$stage/build" "${flags[@]}" || return 1
     cmake --build "$stage/build" --config Release --target llama-server --parallel "$jobs" || return 1
-    # Keep optional memory planning when this upstream version provides it.
-    targets=$(cmake --build "$stage/build" --target help) || return 1
-    if [[ "$targets" == *llama-fit-params* ]]; then
-        cmake --build "$stage/build" --config Release --target llama-fit-params --parallel "$jobs" ||
-            printf 'WARNING: optional memory planner could not be built.\n'
-    fi
     [[ -x "$stage/build/bin/llama-server" ]] || return 1
     # Keep probes in the worker group so Cancel also stops a stalled driver probe.
     platform_build_probe "$stage/build/bin/llama-server" --version || return 1
@@ -152,8 +147,7 @@ build_release() {
             return 1
         fi
     fi
-    # Upstream can finish successfully without Web UI assets after a download
-    # failure. Do not activate that result for a browser-based launcher.
+    # A successful compiler exit does not prove Web UI assets are present.
     if [[ ! -s "$stage/build/tools/ui/dist/index.html" && ! -s "$stage/source/tools/ui/dist/index.html" &&
         ! -s "$stage/source/tools/server/public/index.html.gz" && ! -s "$stage/source/tools/server/public/index.html" &&
         ! -s "$stage/source/examples/server/public/index.html.gz" && ! -s "$stage/source/examples/server/public/index.html" ]]; then
@@ -171,5 +165,5 @@ activate_build() {
     LLAMA_CPP_PATH=$path
     if ! save_paths; then LLAMA_CPP_PATH=$previous; return 1; fi
     SERVER="$path/build/bin/llama-server"
-    CAPABILITIES_SERVER=''; MEMORY_KEY=''
+    CAPABILITIES_SERVER=''
 }

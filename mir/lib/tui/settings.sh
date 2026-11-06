@@ -73,16 +73,100 @@ generation_menu() {
 }
 
 select_device() {
-    local choice i UI_TITLE=Device
+    local choice i hint='Choose a device supported by your llama.cpp build.' UI_TITLE=Device
     local -a options=(auto 'Auto: let llama.cpp choose' none 'CPU only')
     if [[ -f "$SERVER" && -x "$SERVER" ]] && server_devices; then
         for i in "${!DEVICE_NAMES[@]}"; do options+=("${DEVICE_NAMES[i]}" "${DEVICE_DESCRIPTIONS[i]}"); done
+        if multi_gpu_available; then
+            options+=(multiple 'Select multiple devices')
+            hint='Auto lets llama.cpp choose, including multiple GPUs.\nChoose a device or select several explicitly.'
+        fi
     else
         message 'Could not list devices within the time limit, or probing is unavailable.\nCheck the llama.cpp folder and drivers. Auto and CPU only remain available.'
     fi
-    if choice=$(menu --default-item "$DEVICE" --menu 'Choose a device supported by your llama.cpp build' 18 80 10 "${options[@]}"); then
-        DEVICE="$choice"
+    local selected=$DEVICE
+    if [[ "$selected" == *,* ]]; then
+        selected=auto
+        if multi_gpu_available; then selected=multiple; fi
     fi
+    if choice=$(menu --default-item "$selected" --menu "$hint" 19 80 10 "${options[@]}"); then
+        if [[ "$choice" == multiple ]]; then select_multiple_devices; else DEVICE="$choice"; fi
+    fi
+}
+
+select_multiple_devices() {
+    multi_gpu_available || return 0
+    local name i state choice
+    local -a names options=()
+    local -A selected_names=()
+    IFS=, read -r -a names <<< "$DEVICE"
+    names+=("${DEVICE_NAMES[@]}")
+    # Keep selected devices in their saved order: ratios follow this order.
+    for name in "${names[@]}"; do
+        [[ " ${GPU_DEVICE_NAMES[*]} " == *" $name "* ]] || continue
+        [[ ! -v "selected_names[$name]" ]] || continue
+        selected_names[$name]=1
+        for i in "${!DEVICE_NAMES[@]}"; do
+            [[ "$name" == "${DEVICE_NAMES[i]}" ]] || continue
+            state=off
+            if [[ ",$DEVICE," == *",$name,"* ]]; then state=on; fi
+            options+=("$name" "$(compact_text "$name: ${DEVICE_DESCRIPTIONS[i]}" 60)" "$state")
+            break
+        done
+    done
+    if choice=$(UI_TITLE='Select devices' ui --ok-label Apply --cancel-label Back --separate-output --checklist \
+        'Space selects a device; Enter applies. Select at least one.\nProportions and memory margins follow the listed device order.' 20 80 10 "${options[@]}"); then
+        choice=${choice//$'\n'/,}
+        if [[ -n "$choice" ]] && valid_device "$choice"; then DEVICE=$choice;
+        else message 'Select at least one device. The previous selection was kept.'; fi
+    fi
+}
+
+gpu_memory_menu() {
+    local action=margin choice mode flag UI_TITLE='GPU memory'
+    local -a options modes
+    refresh_gpu_settings
+    "$GPU_SETTINGS_ACTIVE" || return 0
+    server_capabilities
+    while true; do
+        options=(margin "Memory margin (MiB)  $(compact_text "$(display_value "$FIT_TARGET")" 45)" \
+            mode "Split mode           $(display_value "$SPLIT_MODE")" \
+            proportions "GPU proportions      $(compact_text "$(display_value "$TENSOR_SPLIT")" 45)")
+        action=$(menu --default-item "$action" --menu "Devices: $(compact_text "$(display_value "$DEVICE")" 58)\nAuto preserves native llama.cpp settings.\nMemory margin applies to automatic fitting, not total process RAM." 18 80 4 "${options[@]}" back Back) || return 0
+        case "$action" in
+            mode)
+                modes=(auto 'Auto: native default')
+                while IFS= read -r mode; do
+                    case "$mode" in
+                        none) modes+=(none 'Single GPU: use one GPU only') ;;
+                        layer) modes+=(layer 'Layer: distribute layers and KV cache') ;;
+                        row) modes+=(row 'Row: parallel distribution of weight rows') ;;
+                        tensor) modes+=(tensor 'Tensor: parallel weights and KV (experimental)') ;;
+                    esac
+                done < <(split_modes)
+                if choice=$(UI_TITLE='GPU split mode' menu --default-item "$SPLIT_MODE" --menu \
+                    'Only advertised modes are offered; Auto omits the launcher option.\nModel/backend restrictions apply. No mode guarantees better speed.' 17 80 6 "${modes[@]}" back Back); then
+                    if [[ "$choice" != back ]]; then SPLIT_MODE=$choice; fi
+                fi ;;
+            proportions|margin)
+                if [[ "$action" == proportions ]]; then
+                    mode=TENSOR_SPLIT
+                    choice='Relative proportions in device order, e.g. 2,1 (not GiB).\nUse auto, or nonnegative numbers with at least one positive value.\nActual placement also depends on split mode and native fitting.'
+                else
+                    mode=FIT_TARGET
+                    choice='Free-memory target for automatic fitting, in MiB.\nUse auto, one integer for all GPUs, or one per GPU in device order.\nThis does not limit total memory or guarantee an allocation succeeds.'
+                fi
+                flag=${mode,,}; flag=${flag//_/-}
+                if choice=$(UI_TITLE='GPU memory setting' ui --cancel-label Back --inputbox "$choice" 14 80 "${!mode}"); then
+                    if [[ "$choice" != auto ]] && ! supports_option "--$flag"; then
+                        message "This llama-server does not advertise --$flag. Choose auto or select another build. Current values were kept."
+                    elif { [[ "$mode" == TENSOR_SPLIT ]] && valid_gpu_list ratios "$choice"; } || { [[ "$mode" == FIT_TARGET ]] && valid_gpu_list margins "$choice"; }; then
+                        printf -v "$mode" '%s' "$choice"
+                    else message 'Invalid value. Use auto or a comma-separated list of valid values.\nProportions must include a positive value; margins are whole MiB.'; fi
+                fi ;;
+            back) return 0 ;;
+        esac
+    done
 }
 
 select_cache_type() {
@@ -93,7 +177,7 @@ select_cache_type() {
     types=$(cache_types "$component")
     [[ -n "$types" ]] || { message 'Could not read supported cache types from llama-server help.\nCheck the selected build in Folders. Current values were kept.'; return 0; }
     for type in q4_0 q8_0 f16; do
-        cache_type_supported "$type" "$types" || continue
+        listed_value "$type" "$types" || continue
         case "$type" in
             q4_0) primary+=("$type" 'Q4_0   Lower memory use (Mir.cpp default)') ;;
             q8_0) primary+=("$type" 'Q8_0   Less aggressive quantization') ;;
@@ -111,7 +195,7 @@ select_cache_type() {
             choice=$(menu --default-item "$current" --menu "Other cache $component formats advertised by this llama-server.\nSupport during inference depends on the model and backend." 20 80 10 "${other[@]}" back Back) || return 0
         fi
         [[ "$choice" != back ]] || return 0
-        cache_type_supported "$choice" "$types" || return 0
+        listed_value "$choice" "$types" || return 0
         printf -v "CACHE_TYPE_$component" '%s' "$choice"
     fi
 }
@@ -131,14 +215,20 @@ cache_menu() {
 
 performance_menu() {
     local action=device choice layers_label UI_TITLE=Performance
+    local -a gpu_option
     while true; do
+        refresh_gpu_settings
+        gpu_option=()
+        if "$GPU_SETTINGS_ACTIVE"; then gpu_option=(gpu 'GPU memory         Advanced distribution and margin'); fi
         layers_label=$(display_value "$GPU_LAYERS")
         if [[ "$DEVICE" == none ]]; then layers_label='Ignored (CPU only)'; fi
-        action=$(menu --default-item "$action" --menu 'Auto and Default use llama.cpp defaults.\nFlash Attention stays automatic.' 18 80 5 \
+        action=$(menu --default-item "$action" --menu 'Auto and Default use llama.cpp defaults.\nFlash Attention stays automatic.' 19 80 6 \
             device "Device             $(compact_text "$(display_value "$DEVICE")" 53)" threads "CPU threads        $(display_value "$THREADS")" \
-            layers "GPU layers         $layers_label" prompt "Prompt processing  $(display_value "$PROMPT_PROCESSING" Default)" back 'Back') || return 0
+            layers "GPU layers         $layers_label" prompt "Prompt processing  $(display_value "$PROMPT_PROCESSING" Default)" \
+            "${gpu_option[@]}" back 'Back') || return 0
         case "$action" in
             device) select_device ;;
+            gpu) gpu_memory_menu ;;
             threads)
                 if choice=$(UI_TITLE='CPU threads' ui --cancel-label Back --inputbox 'CPU threads: auto or a positive integer.\nMore threads are not always faster.' 11 76 "$THREADS"); then
                     if valid_threads "$choice"; then THREADS="$choice"; else message 'Enter auto or a positive integer up to 2147483647.'; fi

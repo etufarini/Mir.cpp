@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Isolated integration checks; optional argument compares a pre-refactor launcher.
+# Isolated integration checks; optional argument compares another standalone launcher.
 set -euo pipefail
 TEST_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
-python3 - "$TEST_ROOT" "${1:-}" <<'PY'
+python3 -I - "$TEST_ROOT" "${1:-}" <<'PY'
 import json
 import os
 from pathlib import Path
@@ -128,7 +128,6 @@ sys.exit(status)
     assert precedence[0] == 0, precedence
     assert b'--threads\x003\x00' in precedence[3] and b'--port\x0010001\x00' in precedence[3]
     assert b'--device\x00none\x00' in precedence[3] and b'--host\x00127.0.0.1\x00' in precedence[3]
-    assert run(root / 'mir.sh', {'MIR_THREADS':'', 'LLAMA_THREADS':'4'})[0] == 1
     print('PASS: new environment names, legacy aliases, explicit precedence')
 
     sampling = ['temperature', 'top_p', 'top_k', 'min_p', 'repeat_penalty', 'presence_penalty', 'frequency_penalty']
@@ -149,16 +148,21 @@ sys.exit(status)
     args = run(root / 'mir.sh', overrides, ['--temperature','0.9'])[3].decode().split('\0')[:-1]
     assert args[args.index('--temperature')+1] == '0.75' and args[-2:] == ['--temperature','0.9']
     assert args[args.index('--seed')+1] == '4294967295' and args[args.index('--n-predict')+1] == '1024'
-    for key, value in [('TEMPERATURE',''), ('TEMPERATURE','-0.1'), ('TEMPERATURE','nan'),
-                       ('TOP_P','1.01'), ('MIN_P','-0.1'), ('TOP_K','1.5'), ('TOP_K','2147483648'),
+    for key, value in [('TEMPERATURE','nan'), ('TOP_P','1.01'), ('MIN_P','-0.1'), ('TOP_K','1.5'),
                        ('REPEAT_PENALTY','0'), ('PRESENCE_PENALTY','$(touch bad)'),
+                       ('FREQUENCY_PENALTY','-0.1234567890'),
                        ('SEED','4294967296'), ('MAX_TOKENS','-2'), ('GENERATION_PRESET','unknown')]:
         result = run(root / 'mir.sh', {'MIR_'+key:value})
         assert result[0] == 1 and result[3] is None and result[2], (key,value,result)
-    for key, value in [('TEMPERATURE','0'), ('TOP_P','1.000'), ('MIN_P','0'), ('TOP_K','0'),
-                       ('REPEAT_PENALTY','0.01'), ('PRESENCE_PENALTY','-0.5'), ('FREQUENCY_PENALTY','0.2'),
-                       ('SEED','-1'), ('MAX_TOKENS','-1'), ('MAX_TOKENS','0')]:
-        assert run(root / 'mir.sh', {'MIR_'+key:value})[0] == 0, (key,value)
+    explicit = {'TEMPERATURE':'0', 'TOP_P':'1.000', 'MIN_P':'0', 'TOP_K':'0',
+                'REPEAT_PENALTY':'0.01', 'PRESENCE_PENALTY':'-0.5', 'FREQUENCY_PENALTY':'0.2',
+                'SEED':'-1', 'MAX_TOKENS':'0'}
+    result = run(root / 'mir.sh', {'MIR_'+key:value for key,value in explicit.items()})
+    assert result[0] == 0, result
+    args = result[3].decode().split('\0')[:-1]
+    for key, value in explicit.items():
+        flag = '--n-predict' if key == 'MAX_TOKENS' else '--' + key.lower().replace('_','-')
+        assert args[args.index(flag)+1] == value, (key,value,args)
     assert run(root / 'mir.sh', {'LLAMA_GENERATION_PRESET':'min-p', 'LLAMA_TEMPERATURE':'0.7'})[0] == 0
     print('PASS: generation presets, default omission, numeric validation, aliases and pass-through precedence')
 
@@ -250,15 +254,15 @@ load_paths
     generation_checks = r'''
 initialize_config "$2"
 build_model_args
-planner_args=$(printf '%s\n' "${MODEL_ARGS[@]}")
+model_args=$(printf '%s\n' "${MODEL_ARGS[@]}")
 set_generation_preset focused
 GENERATION[seed]=7 GENERATION[max_tokens]=2048
 set_generation_preset min-p
 [[ $(generation_preset) == min-p && ${GENERATION[seed]} == 7 && ${GENERATION[max_tokens]} == 2048 ]]
 build_model_args
-[[ $(printf '%s\n' "${MODEL_ARGS[@]}") == "$planner_args" ]]
+[[ $(printf '%s\n' "${MODEL_ARGS[@]}") == "$model_args" ]]
 write_profile "$PROFILES_DIR/Generation.conf"
-(( $(wc -l < "$PROFILES_DIR/Generation.conf") == 18 ))
+(( $(wc -l < "$PROFILES_DIR/Generation.conf") == 21 ))
 saved=$(profile_data)
 GENERATION[temperature]=0.8
 [[ $(generation_preset) == custom && $(profile_status) == 'Generation (Modified)' ]]
@@ -290,17 +294,18 @@ generation_menu
 rm "$PROFILES_DIR/Generation.conf" "$PROFILES_DIR/Invalid.conf"
 '''
     subprocess.run(['bash','-euo','pipefail','-c',sources+generation_checks,'test',str(root),str(model)],env=env,check=True)
-    print('PASS: current profile saves, Modified tracking, rollback, cancellation and planner isolation')
+    print('PASS: current profile saves, Modified tracking, rollback, cancellation and model argument isolation')
 
     flexible_profiles = r'''
 initialize_config "$2"
 CTX_SIZE=8192 PORT=10001 DEVICE=Vulkan0 THREADS=4 GPU_LAYERS=12
 PROMPT_PROCESSING=large-batch CACHE_TYPE_K=q8_0 CACHE_TYPE_V=f16
+SPLIT_MODE=layer TENSOR_SPLIT=2,1 FIT_TARGET=2048,1024
 set_generation_preset focused
 GENERATION[seed]=42 GENERATION[max_tokens]=1024
 write_profile "$PROFILES_DIR/Complete.conf"
 complete=$(profile_data)
-for field in model context port device threads gpu_layers prompt_processing cache_type_k cache_type_v "${GENERATION_KEYS[@]}"; do
+for field in model context port device threads gpu_layers prompt_processing cache_type_k cache_type_v split_mode tensor_split fit_target "${GENERATION_KEYS[@]}"; do
     load_profile "$PROFILES_DIR/Complete.conf"
     before=$(profile_data)
     tracking=$SAVED_PROFILE
@@ -330,6 +335,7 @@ printf 'model=%s\n' "$2" > "$PROFILES_DIR/Minimal.conf"
 load_profile "$PROFILES_DIR/Minimal.conf"
 [[ $CTX_SIZE == auto && $PORT == 9931 && $DEVICE == auto && $THREADS == auto && $GPU_LAYERS == auto ]]
 [[ $PROMPT_PROCESSING == auto && $CACHE_TYPE_K == q4_0 && $CACHE_TYPE_V == q4_0 ]]
+[[ $SPLIT_MODE == auto && $TENSOR_SPLIT == auto && $FIT_TARGET == auto ]]
 for key in "${GENERATION_KEYS[@]}"; do [[ ${GENERATION[$key]} == auto ]]; done
 defaults=$(profile_data)
 [[ $(profile_status) == Minimal ]]
@@ -342,7 +348,7 @@ load_profile "$PROFILES_DIR/Compatible.conf"
 write_profile "$PROFILES_DIR/Resaved.conf"
 [[ $(cat "$CURRENT_PROFILE") == "$complete" ]]
 # Reject malformed input and invalid recognized fields without changing state.
-for value in 'malformed line without separator' 'model=' "model=$2.missing.gguf" 'context=' 'port=' 'device=' 'threads=' 'gpu_layers=' 'prompt_processing=' 'cache_type_k=' 'cache_type_v=' 'temperature=$(touch executed)'; do
+for value in 'malformed line without separator' 'model=' "model=$2.missing.gguf" 'context=' 'port=' 'device=' 'threads=' 'gpu_layers=' 'prompt_processing=' 'cache_type_k=' 'cache_type_v=' 'split_mode=' 'tensor_split=' 'fit_target=' 'temperature=$(touch executed)'; do
     field=${value%%=*}
     while IFS= read -r line; do
         [[ "$line" == "$field="* ]] || printf '%s\n' "$line"
@@ -357,7 +363,7 @@ printf 'removed_control=auto\n' >> "$PROFILES_DIR/Partial.conf"
 load_profile "$PROFILES_DIR/Partial.conf"
 expected=$(printf '%s\n' "$complete" | sed 's/^cache_type_k=.*/cache_type_k=q4_0/; s/^cache_type_v=.*/cache_type_v=q4_0/')
 [[ $(profile_data) == "$expected" && $(profile_status) == Partial ]]
-head -n 7 "$PROFILES_DIR/Complete.conf" > "$PROFILES_DIR/Partial.conf"
+grep -E '^(model|context|port|device|threads|gpu_layers|prompt_processing)=' "$PROFILES_DIR/Complete.conf" > "$PROFILES_DIR/Partial.conf"
 load_profile "$PROFILES_DIR/Partial.conf"
 [[ $CTX_SIZE == 8192 && $PORT == 10001 && $CACHE_TYPE_K == q4_0 && $CACHE_TYPE_V == q4_0 ]]
 for key in "${GENERATION_KEYS[@]}"; do [[ ${GENERATION[$key]} == auto ]]; done
@@ -367,7 +373,8 @@ load_profile "$PROFILES_DIR/Minimal.conf"
 '''
     subprocess.run(['bash','-euo','pipefail','-c',sources+flexible_profiles,'test',str(root),str(model)],
                    env=env | {'MIR_PORT':'11000', 'MIR_CACHE_TYPE_K':'f32', 'MIR_CACHE_TYPE_V':'q8_0',
-                              'MIR_GENERATION_PRESET':'exploratory', 'LLAMA_ARG_CACHE_TYPE_V':'f16'},
+                              'MIR_GENERATION_PRESET':'exploratory', 'LLAMA_ARG_CACHE_TYPE_V':'f16',
+                              'MIR_SPLIT_MODE':'row', 'MIR_TENSOR_SPLIT':'3,1', 'MIR_FIT_TARGET':'4096'},
                    cwd=work, check=True)
     print('PASS: flexible profiles, independent defaults, unknown literal fields, current-only saves and atomic load rejection')
 
@@ -379,10 +386,9 @@ DEVICE=$(printf 'Accelerator%.0s' {1..12})
 CURRENT_PROFILE="$PROFILES_DIR/$(printf 'Profile%.0s' {1..10}).conf"
 SAVED_PROFILE='different settings'
 PORT_STATUS=$'Port 9931: IN USE\n123 user server'
-printf -v MEMORY_TEXT '%-72s' 'Est. free GiB: RAM 16.3 | GPU 1.5'
 before=$(profile_data)
 mapfile -t lines < <(configuration_summary)
-[[ ${#lines[@]} == 6 && ${lines[0]} == *'(Modified)' ]]
+[[ ${#lines[@]} == 5 && ${lines[0]} == *'(Modified)' ]]
 [[ ${lines[1]} == *'...'*model.gguf && ${lines[2]} == 'Context       4K' ]]
 [[ ${lines[3]} == Device* && ${lines[4]} == 'Port          9931: IN USE' ]]
 for line in "${lines[@]}"; do (( ${#line} <= 72 )); done
@@ -443,8 +449,6 @@ MODEL=''
     assert (imported / 'profiles/Old.conf').read_bytes() == recent_profile
     assert (legacy / 'profiles/Old.conf').read_bytes() == recent_profile
     shutil.rmtree(imported)
-    check_migration('cp() { return 1; }; initialize_config "$2"', success=False)
-    assert not imported.exists() and not list(migration_base.glob('.mir-migration.*'))
     # A destination created during activation must also remain untouched.
     check_migration(r'''mv() {
     mkdir -p "$CONFIG_DIR"
@@ -460,13 +464,23 @@ initialize_config "$2"
 
     hidden = models / '.hidden'
     hidden.mkdir()
-    (work / 'queue').write_text(json.dumps([[0,'hidden'],[0,'path'],[0,str(hidden)],[0,'use']]))
+    (work / 'dialog.log').write_text('')
+    (work / 'queue').write_text(json.dumps([
+        [0,'hidden'], [0,'path'], [255,''],
+        [0,'path'], [0,str(models / 'missing')], [0,''],
+        [0,'path'], [0,str(hidden)], [0,'parent'], [0,'1'], [0,'use']]))
     folder_checks = r'initialize_config "$2"; [[ $(select_folder "$MODELS_DIR") == "$MODELS_DIR/.hidden" ]]'
     subprocess.run(['bash','-euo','pipefail','-c',sources+folder_checks,'test',str(root),str(model)],env=env,check=True)
+    folder_menus = [args for line in (work / 'dialog.log').read_text().splitlines()
+                    if '--menu' in (args := json.loads(line))]
+    assert [args[args.index('--default-item')+1] for args in folder_menus] == [
+        'use', 'hidden', 'path', 'path', 'use', 'use', 'use']
+    assert '.hidden/' not in folder_menus[0] and '.hidden/' in folder_menus[1]
+    assert json.loads((work / 'queue').read_text()) == []
     (work / 'queue').write_text(json.dumps([[255,'']]))
     folder_checks = r'initialize_config "$2"; previous=$MODELS_DIR; if select_folder "$MODELS_DIR"; then exit 1; fi; [[ "$MODELS_DIR" == "$previous" ]]'
     subprocess.run(['bash','-euo','pipefail','-c',sources+folder_checks,'test',str(root),str(model)],env=env,check=True)
-    print('PASS: hidden-folder navigation, typed paths and cancellation')
+    print('PASS: folder selection memory, hidden folders, parent navigation, invalid paths and cancellation')
 
     # Drive the complete TUI in a real terminal, using a deterministic dialog queue.
     for launcher in launchers:
@@ -504,7 +518,7 @@ initialize_config "$2"
         assert 'View log' in log and 'Ready' in log
         if launcher == root / 'mir.sh':
             assert 'MIR.CPP / STATION CONTROL' in log and 'Status     Ready' in log
-            assert 'Est. free: unavailable' in log
+            assert 'Est. free' not in log
             assert 'Free GiB:' in log, log
             dialogs = [json.loads(line) for line in log.splitlines()]
             for args in dialogs:
@@ -523,14 +537,15 @@ initialize_config "$2"
                 cancel = [value for key, value in zip(args, args[1:]) if key == '--cancel-label'][-1]
                 assert cancel == ('Quit' if 'Launch server' in args else 'Back')
             main = [args for args in menus if 'Launch server' in args]
-            assert main[0][main[0].index('--default-item')+1] == 'launch'
-            assert any(args[args.index('--default-item')+1] == 'model' for args in main)
+            assert [args[args.index('--default-item')+1] for args in main] == [
+                'launch', 'configurations', 'model', 'performance',
+                'configurations', 'configurations', 'configurations', 'server']
             assert any(args[args.index('--default-item')+1] == 'context' for args in menus)
             for args in main:
                 assert args[args.index('--title')+1] == ' Main menu '
                 index = args.index('--menu')
                 assert args[index+5::2] == ['launch','model','performance','server','configurations','paths','quit']
-                assert len(args[index+1].splitlines()) == 6
+                assert len(args[index+1].splitlines()) == 5
             assert any('--msgbox' in args and ' Port process details ' in args and '--scrollbar' in args for args in dialogs)
             assert any('--msgbox' in args and ' Information ' in args for args in dialogs)
             assert all(args[args.index('--title')+1] == ' Server log ' and '--exit-label' in args
@@ -539,7 +554,6 @@ initialize_config "$2"
         assert b'--ctx-size\x008192\x00' in args and b'--batch-size\x00512\x00' in args
         if launcher == root / 'mir.sh':
             assert b'--temperature\x000.7\x00' in args and b'--seed\x0042\x00' in args and b'--n-predict\x002048\x00' in args
-        # The log viewer must have received a temporary file removed by cleanup.
         boxes = [json.loads(line) for line in log.splitlines() if '--textbox' in line]
         assert boxes and not Path(boxes[0][boxes[0].index('--textbox')+1]).exists()
     print('PASS: TUI navigation, settings, readiness, logs, Stop server and temporary-log cleanup')

@@ -6,7 +6,6 @@ configuration_summary() {
         Model "$(compact_text "${MODEL##*/}")" Context "$(context_label)" \
         Device "$(compact_text "$(display_value "$DEVICE")")" \
         Port "${port_status#Port }"
-    printf '%s' "$MEMORY_TEXT"
 }
 
 server_menu() {
@@ -29,7 +28,7 @@ server_menu() {
 }
 
 configure_tui() {
-    local ACTION CHOICE RESULT UI_TITLE='Main menu'
+    local ACTION UI_TITLE='Main menu'
     [[ -t 0 && -t 1 ]] || fail 'The TUI needs a terminal. For direct startup, pass a GGUF path.'
     check_dependencies tui || exit 1
     THEME_FILE="$MIR_ROOT/dialogrc"
@@ -43,21 +42,14 @@ configure_tui() {
     ACTION=launch
     while true; do
         check_port
-        refresh_memory
-        memory_controls estimate
-        if CHOICE=$(menu --cancel-label Quit "${MEMORY_BUTTONS[@]}" --default-item "$ACTION" --menu "$(configuration_summary)" 22 80 7 \
+        ACTION=$(menu --cancel-label Quit --default-item "$ACTION" --menu "$(configuration_summary)" 22 80 7 \
             launch 'Launch server' \
             model 'Model settings           Model and generation' \
             performance 'Performance              Device, threads, input' \
             server 'Server & port            Port and processes' \
             configurations 'Saved configurations     Load, update, save, delete' \
             paths 'Folders                  llama.cpp and models' \
-            quit 'Quit'); then ACTION=$CHOICE;
-        else
-            RESULT=$?
-            if (( RESULT == 3 )); then MEMORY_PAGE=$((MEMORY_PAGE + 1)); continue; fi
-            exit 0
-        fi
+            quit 'Quit') || exit 0
         case "$ACTION" in
             model) model_menu ;;
             performance) performance_menu ;;
@@ -77,7 +69,7 @@ running_screen() {
     STATE=Loading
     if "$OPENED"; then STATE=Ready; fi
     memory_available
-    memory_controls live
+    memory_controls
     # Give refresh timeouts a distinct status from Escape (255).
     if DIALOG_TIMEOUT=5 UI_TITLE='Server running' ui "${MEMORY_BUTTONS[@]}" --yes-label 'Stop server' --no-label 'View log' --timeout 2 \
         --yesno "Status     $STATE\nModel      $(compact_text "${MODEL##*/}")\nAddress    $URL\n\n$MEMORY_TEXT\nStop server also exits the launcher." 22 80; then

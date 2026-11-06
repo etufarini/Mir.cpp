@@ -6,6 +6,10 @@ fail() { printf '%s\n' "$*" >&2; exit 1; }
 
 valid_count() { [[ "$1" =~ ^(0|[1-9][0-9]{0,9})$ ]] && (( $1 <= 2147483647 )); }
 
+valid_decimal() {
+    [[ "$1" =~ ^(0|[1-9][0-9]{0,9})(\.[0-9]{1,9})?$ ]] && valid_count "${1%%.*}"
+}
+
 valid_threads() { [[ "$1" == auto ]] || { valid_count "$1" && [[ "$1" != 0 ]]; }; }
 
 valid_context() { [[ "$1" == auto ]] || valid_count "$1"; }
@@ -13,6 +17,26 @@ valid_context() { [[ "$1" == auto ]] || valid_count "$1"; }
 valid_device() { [[ "$1" =~ ^[a-zA-Z0-9_.:-]+(,[a-zA-Z0-9_.:-]+)*$ ]]; }
 
 valid_layers() { [[ "$1" == auto || "$1" == all ]] || valid_count "$1"; }
+
+valid_split_mode() { case "$1" in auto|none|layer|row|tensor) return 0 ;; *) return 1 ;; esac; }
+
+# Ratios may contain decimals; memory margins are whole MiB. Never evaluate input.
+valid_gpu_list() {
+    local kind=$1 value nonzero=false
+    [[ "$2" == auto ]] && return 0
+    [[ "$2" =~ ^[0-9]+(\.[0-9]+)?(,[0-9]+(\.[0-9]+)?)*$ ]] || return 1
+    local -a values
+    IFS=, read -r -a values <<< "$2"
+    for value in "${values[@]}"; do
+        if [[ "$kind" == ratios ]]; then
+            valid_decimal "$value" || return 1
+            if [[ ! "$value" =~ ^0(\.0+)?$ ]]; then nonzero=true; fi
+        else
+            valid_count "$value" || return 1
+        fi
+    done
+    [[ "$kind" != ratios ]] || "$nonzero"
+}
 
 valid_cache_type() { [[ "$1" =~ ^[a-z][a-z0-9_]{0,31}$ ]]; }
 
@@ -54,9 +78,7 @@ valid_generation_value() {
         max_tokens) [[ "$value" == -1 ]] || valid_count "$value"; return ;;
         top_k) valid_count "$value"; return ;;
     esac
-    # Reject expressions, infinities and excessive precision before arithmetic.
-    [[ "$value" =~ ^-?(0|[1-9][0-9]{0,9})(\.[0-9]{1,9})?$ ]] || return 1
-    valid_count "${magnitude%%.*}" || return 1
+    valid_decimal "$magnitude" || return 1
     case "$key" in
         top_p|min_p) [[ "$value" != -* && ( "$value" == 0 || "$value" == 0.* || "$value" =~ ^1(\.0+)?$ ) ]] ;;
         temperature) [[ "$value" != -* ]] ;;
@@ -94,6 +116,9 @@ initialize_config() {
     read_launcher_control DEVICE DEVICE "${LLAMA_DEVICE:-auto}"
     read_launcher_control THREADS THREADS "${LLAMA_THREADS:-auto}"
     read_launcher_control GPU_LAYERS GPU_LAYERS "${LLAMA_GPU_LAYERS:-auto}"
+    read_launcher_control SPLIT_MODE SPLIT_MODE auto
+    read_launcher_control TENSOR_SPLIT TENSOR_SPLIT auto
+    read_launcher_control FIT_TARGET FIT_TARGET auto
     read_launcher_control PROMPT_PROCESSING PROMPT_PROCESSING "${LLAMA_PROMPT_PROCESSING:-auto}"
     read_launcher_control CACHE_TYPE_K CACHE_TYPE_K "${LLAMA_ARG_CACHE_TYPE_K-q4_0}"
     read_launcher_control CACHE_TYPE_V CACHE_TYPE_V "${LLAMA_ARG_CACHE_TYPE_V-q4_0}"
@@ -110,9 +135,9 @@ initialize_config() {
     done
     read_launcher_control SERVER_HOST HOST "${LLAMA_HOST:-}"
     PROFILES_DIR="$CONFIG_DIR/profiles"
-    declare -ga MEMORY_NAMES=() MEMORY_MIB=()
+    declare -ga GPU_DEVICE_NAMES=()
     declare -gA DEVICE_FREE=()
-    MEMORY_KEY=""
+    GPU_SETTINGS_ACTIVE=false
     MEMORY_PAGE=0
     declare -ga MEMORY_BUTTONS=()
     CURRENT_PROFILE=""
@@ -131,6 +156,9 @@ validate_config() {
     valid_device "$DEVICE" || fail 'MIR_DEVICE must be auto, none or a comma-separated list of device names.'
     valid_threads "$THREADS" || fail 'MIR_THREADS must be auto or a positive integer (up to 2147483647).'
     valid_layers "$GPU_LAYERS" || fail 'MIR_GPU_LAYERS must be auto, all or a nonnegative integer (up to 2147483647).'
+    valid_split_mode "$SPLIT_MODE" || fail 'MIR_SPLIT_MODE must be auto, none, layer, row or tensor.'
+    valid_gpu_list ratios "$TENSOR_SPLIT" || fail 'MIR_TENSOR_SPLIT must be auto or comma-separated nonnegative proportions, with at least one positive value.'
+    valid_gpu_list margins "$FIT_TARGET" || fail 'MIR_FIT_TARGET must be auto or comma-separated nonnegative MiB integers (up to 2147483647).'
     for key in K V; do
         control="CACHE_TYPE_$key"
         valid_cache_type "${!control}" || fail "MIR_$control must be a lowercase cache type advertised by llama-server (for example q4_0, q8_0 or f16)."

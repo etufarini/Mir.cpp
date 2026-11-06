@@ -10,8 +10,7 @@ server_path() {
     printf '%s/build/bin/llama-server' "$folder"
 }
 
-# Stage a copy beside the destination for atomic activation, preserving the
-# original and any existing Mir.cpp settings. Imported files remain data.
+# Stage beside the destination so migration can activate atomically.
 migrate_config() {
     local legacy="${CONFIG_DIR%/*}/llama-launcher" temporary
     if [[ -e "$CONFIG_DIR" || -L "$CONFIG_DIR" ]]; then return 0; fi

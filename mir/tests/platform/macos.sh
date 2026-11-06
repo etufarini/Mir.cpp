@@ -2,7 +2,7 @@
 # Darwin fixtures run on either host; native socket checks run only on macOS.
 set -euo pipefail
 TEST_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
-python3 - "$TEST_ROOT" <<'PY'
+python3 -I - "$TEST_ROOT" <<'PY'
 import os
 from pathlib import Path
 import shutil
@@ -21,11 +21,6 @@ with tempfile.TemporaryDirectory(prefix='mir-macos-') as temporary:
         path.write_text(text)
         path.chmod(0o755)
     executable(commands / 'uname', '#!/bin/sh\nprintf "Darwin\\n"\n')
-    executable(commands / 'sysctl', """#!/bin/sh
-[ "${TEST_SYSCTL_EXIT:-0}" = 0 ] || exit 1
-[ "$*" = '-n hw.optional.arm64' ] || exit 1
-printf '%s\\n' "${TEST_ARM64-1}"
-""")
     snapshot = ('Mach Virtual Memory Statistics: (page size of 16384 bytes)\n'
                 'Pages free: 65536.\nPages inactive: 655360.\nPages speculative: 65536.\n')
     executable(commands / 'vm_stat', """#!/bin/sh
@@ -50,19 +45,10 @@ exit "${TEST_VM_STAT_EXIT:-0}"
 case "$1" in
     --help)
         printf '%s\\n' '--model --port --device --gpu-layers --cache-type-k --cache-type-v'
-        if [[ ${TEST_SERVER_AUTO:-0} == 1 ]]; then echo 'number of server slots (default: -1, -1 = auto)';
-        else echo 'number of server slots (default: 1)'; fi ;;
+        echo 'number of server slots (default: 1)' ;;
     --list-devices) printf probe >> "$TEST_DEVICE_PROBES"; /bin/sleep "${TEST_DEVICE_DELAY:-0}"; printf 'Available devices:\\n  MTL0: Test GPU (8192 MiB, 4096 MiB free)\\n' ;;
     *) printf '%s\\0' "$@" > "$TEST_ARGS"; /bin/sleep 0.2 ;;
 esac
-''')
-    executable(package / 'bin/llama-fit-params', '''#!/usr/bin/env bash
-if [[ $1 == --help ]]; then
-    printf '%s\\n' '--fit-print --parallel' '--cache-type-k TYPE' 'allowed values: q4_0' '--cache-type-v TYPE' 'allowed values: q4_0'
-    exit 0
-fi
-if [[ ${*: -1} == off ]]; then echo '-c 512 -ngl -1';
-else printf '%s\\n' 'MTL0 7000 1000 192' 'Host 512 256 256'; fi
 ''')
     env = {k:v for k,v in os.environ.items() if not k.startswith(('MIR_', 'LLAMA_', 'XDG_'))}
     env.update(PATH=str(commands) + ':' + native_path, HOME=str(work), XDG_CONFIG_HOME=str(work / 'config'),
@@ -93,50 +79,34 @@ server_devices
 size=$(wc -c < "$TEST_DEVICE_PROBES")
 memory_available
 [[ $RAM_AVAILABLE == 12288 && ${#DEVICE_FREE[@]} == 0 ]]
-memory_estimate
-[[ $(memory_line estimate) == 'Est. free GiB: RAM ~3.0' ]]
-SERVER_PID=123
-memory_available
-(( $(wc -c < "$TEST_DEVICE_PROBES") == size ))
-[[ $(memory_line live) == 'Free GiB: RAM ~12.0' ]]
-memory_controls live
+[[ $(memory_line) == 'Free GiB: RAM ~12.0' ]]
+memory_controls
 [[ ${#MEMORY_BUTTONS[@]} == 0 ]]
 for width in 16 24 40 72; do
-    for MEMORY_PAGE in 0 1 2 3; do
-        line=$(memory_line estimate "$width")
-        (( ${#line} <= width ))
-        [[ $line == *'RAM ~3.0' ]]
-    done
+    line=$(memory_line "$width")
+    (( ${#line} <= width ))
+    [[ $line == *'RAM ~12.0' ]]
 done
-RAM_AVAILABLE=8192
-[[ $(memory_line estimate) == 'Est. free GiB: RAM ~-1.0' ]]
-MEMORY_NAMES=() MEMORY_MIB=()
-[[ $(memory_line estimate) == 'Est. free GiB: RAM N/A' ]]
 DEVICE=none
 memory_available
 (( $(wc -c < "$TEST_DEVICE_PROBES") == size ))
-[[ $(memory_line live) == 'Free GiB: RAM ~12.0' ]]
-''', {'TEST_DEVICE_DELAY':'2.2'})
-    print('PASS: Darwin paths, cold discovery, shared-memory forecast, live available RAM, compact widths and no telemetry GPU probes')
-    check('''initialize_config "$2"
-build_model_args
-before=$(printf '%s\\n' "${MODEL_ARGS[@]}")
-refresh_memory
-[[ ${#MEMORY_NAMES[@]} == 0 && $(memory_line estimate) == 'Est. free GiB: RAM N/A' ]]
-[[ $(memory_line live) == 'Free GiB: RAM ~12.0' ]]
-[[ $(printf '%s\\n' "${MODEL_ARGS[@]}") == "$before" ]]
-''', {'TEST_SERVER_AUTO':'1'})
-    print('PASS: automatic unified KV with an incompatible planner shows N/A and preserves live RAM and launch arguments')
-    check('''initialize_config "$2"
-memory_available
-memory_estimate
 [[ $(platform_memory_style) == system ]]
-[[ $(memory_line estimate) == 'Est. free GiB: RAM N/A' ]]
-[[ $(memory_line live) == 'Free GiB: RAM ~12.0' ]]
-MEMORY_NAMES=(Host) MEMORY_MIB=(1024)
-[[ $(memory_line estimate) == 'Est. free GiB: RAM ~11.0' ]]
-''', {'TEST_ARM64':'0'})
-    check('[[ $(platform_memory_style) == system ]]', {'TEST_SYSCTL_EXIT':'1'})
+if platform_multi_gpu_ui; then exit 1; fi
+# Linux multi-GPU controls stay disabled even with a saved multi-device selection.
+TUI=true DEVICE=MTL0,MTL1 SPLIT_MODE=tensor TENSOR_SPLIT=2,1 FIT_TARGET=2048
+refresh_gpu_settings
+[[ $GPU_SETTINGS_ACTIVE == false ]]
+build_model_args
+[[ " ${MODEL_ARGS[*]} " != *' --split-mode '* && " ${MODEL_ARGS[*]} " != *' --tensor-split '* && " ${MODEL_ARGS[*]} " != *' --fit-target '* ]]
+[[ $SPLIT_MODE == tensor && $TENSOR_SPLIT == 2,1 && $FIT_TARGET == 2048 ]]
+ui() { printf '%s\\n' "$@" > "$TEST_ARGS"; return 255; }
+performance_menu
+if grep -q 'GPU memory' "$TEST_ARGS"; then exit 1; fi
+select_device
+if grep -q 'Select multiple devices' "$TEST_ARGS"; then exit 1; fi
+[[ $(platform_gpu_build_note) == *'included in macOS'* ]]
+''', {'TEST_DEVICE_DELAY':'0.1'})
+    print('PASS: Darwin live RAM, compact widths, no telemetry GPU probes and hidden/inactive multi-GPU controls')
     for bad in ('', snapshot.replace('Pages inactive: 655360.\n', ''),
                 snapshot + 'Pages free: 1.\n', snapshot.replace('16384', '0'),
                 snapshot.replace('16384', '12345'), snapshot.replace('16384', '99999999'),
@@ -148,11 +118,11 @@ MEMORY_NAMES=(Host) MEMORY_MIB=(1024)
     check('platform_memory_snapshot; [[ -z "$RAM_AVAILABLE" ]]', {'TEST_VM_STAT_EXIT':'1'})
     check('''initialize_config "$2"
 memory_available
-[[ $RAM_AVAILABLE == 0 && $(memory_line live) == 'Free GiB: RAM ~0.0' ]]
+[[ $RAM_AVAILABLE == 0 && $(memory_line) == 'Free GiB: RAM ~0.0' ]]
 ''', {'TEST_VM_STAT':snapshot.replace('655360.', '0.').replace('65536.', '0.')})
     check('platform_memory_snapshot; [[ $RAM_AVAILABLE == 3072 ]]',
           {'TEST_VM_STAT':snapshot.replace('16384', '4096')})
-    print('PASS: non-unified forecasts, 4/16 KiB pages, missing/malformed/duplicate counters, zero values and unavailable probes')
+    print('PASS: 4/16 KiB pages, missing/malformed/duplicate counters, zero values and unavailable probes')
 
     busy = 'tcp4 0 0 127.0.0.1.9931 *.* LISTEN\ntcp6 0 0 ::1.9931 *.* LISTEN\n'
     check('PORT=9931; check_port; [[ -z "$LISTENERS" && ${#PIDS[@]} == 0 ]]',
