@@ -319,10 +319,15 @@ the label to **Not saved**.
 
 Profiles are plain `key=value` files under
 `${XDG_CONFIG_HOME:-$HOME/.config}/mir.cpp/profiles/`; back up this folder to retain
-them. Each stores 18 fields: model, context, port, device, threads, GPU layers,
-prompt processing, K/V cache types and nine generation values. All fields are required. Partial
-or invalid profiles and missing models leave current settings unchanged. Saved
-devices and cache types are checked against the current server before launch.
+them. New saves contain the current settings: model, context, port, device,
+threads, GPU layers, prompt processing, K/V cache types and nine generation values.
+Loading ignores unknown or removed fields. Only the model path is required.
+Missing settings use launcher defaults: port 9931, Q4_0 for both cache types and
+Auto for the remaining controls, independently of current settings or environment
+overrides. Invalid or duplicate recognized fields, malformed lines and missing
+models reject the entire load, keeping current settings unchanged. Saved devices
+and cache types are checked against the current server before launch. Loading
+does not rewrite the file; saving again writes only currently supported fields.
 
 Profiles exclude conversations, trailing arguments and unrelated environment
 settings. Global folder paths are stored separately; changing the models folder

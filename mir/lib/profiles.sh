@@ -24,12 +24,18 @@ load_profile() {
         key="${line%%=*}"
         case "$key" in
             model|context|port|device|threads|gpu_layers|prompt_processing|cache_type_k|cache_type_v|temperature|top_p|top_k|min_p|repeat_penalty|presence_penalty|frequency_penalty|seed|max_tokens) ;;
-            *) return 1 ;;
+            *) continue ;;
         esac
         [[ ! -v "settings[$key]" ]] || return 1
         settings[$key]="${line#*=}"
     done < "$file"
-    (( ${#settings[@]} == 18 )) || return 1
+    [[ -v 'settings[model]' ]] || return 1
+    # Missing fields use launcher defaults, never values from the current session.
+    for key in context device threads gpu_layers prompt_processing "${GENERATION_KEYS[@]}"; do
+        settings[$key]=${settings[$key]-auto}
+    done
+    settings[port]=${settings[port]-9931}
+    for key in cache_type_k cache_type_v; do settings[$key]=${settings[$key]-q4_0}; done
     [[ -f "${settings[model]}" && "${settings[model],,}" == *.gguf ]] || return 1
     valid_context "${settings[context]}" || return 1
     valid_port "${settings[port]}" || return 1
